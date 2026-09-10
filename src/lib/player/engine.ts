@@ -23,10 +23,11 @@ function loadShaka() {
 export async function resolveStream(track: Track, quality: Quality, signal?: AbortSignal): Promise<ResolvedStream> {
   try {
     const m = await getManifest(track.id, quality, { signal })
+    if (!m?.manifest) throw new Error('No manifest from mirror')
     const decoded = safeAtob(m.manifest)
     const isPreview = m.assetPresentation === 'PREVIEW'
-    noteSource('mirror')
     if (decoded.includes('<MPD')) {
+      noteSource('mirror')
       const blob = new Blob([decoded], { type: 'application/dash+xml' })
       const url = URL.createObjectURL(blob)
       return { url, mimeType: 'application/dash+xml', isPreview, quality: m.audioQuality, bitDepth: m.bitDepth, sampleRate: m.sampleRate, source: 'mirror', revoke: () => URL.revokeObjectURL(url) }
@@ -34,12 +35,18 @@ export async function resolveStream(track: Track, quality: Quality, signal?: Abo
     try {
       const json = JSON.parse(decoded) as { urls?: string[]; mimeType?: string }
       const direct = json.urls?.[0]
-      if (direct) return { url: direct, mimeType: json.mimeType ?? 'audio/flac', isPreview, quality: m.audioQuality, source: 'mirror' }
+      if (direct) {
+        noteSource('mirror')
+        return { url: direct, mimeType: json.mimeType ?? 'audio/flac', isPreview, quality: m.audioQuality, source: 'mirror' }
+      }
     } catch {
       /* not JSON */
     }
     const match = decoded.match(/https?:\/\/[^\s"'<>]+/)
-    if (match) return { url: match[0], mimeType: '', isPreview, quality: m.audioQuality, source: 'mirror' }
+    if (match) {
+      noteSource('mirror')
+      return { url: match[0], mimeType: '', isPreview, quality: m.audioQuality, source: 'mirror' }
+    }
     throw new Error('Unreadable manifest')
   } catch (mirrorErr) {
     if (signal?.aborted) throw mirrorErr

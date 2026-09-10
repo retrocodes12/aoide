@@ -62,12 +62,12 @@ export const useUI = create<UIState>((set, get) => ({
   },
   dismiss: (id) => set({ toasts: get().toasts.filter((t) => t.id !== id) }),
   setTintFrom: (hex) => {
-    const { accent, ink } = accentFrom(hex, '#4a4a4a')
+    const { accent, ink, soft, faint } = accentFrom(hex, '#4a4a4a')
     const root = document.documentElement.style
     root.setProperty('--tint', accent)
     root.setProperty('--tint-ink', ink)
-    root.setProperty('--tint-ink-soft', ink === '#151517' ? 'rgba(0, 0, 0, 0.5)' : 'rgba(255, 255, 255, 0.5)')
-    root.setProperty('--tint-ink-faint', ink === '#151517' ? 'rgba(0, 0, 0, 0.32)' : 'rgba(255, 255, 255, 0.32)')
+    root.setProperty('--tint-ink-soft', soft)
+    root.setProperty('--tint-ink-faint', faint)
     set({ tint: accent })
   },
   setTintFromImage: (url, fallback) => {

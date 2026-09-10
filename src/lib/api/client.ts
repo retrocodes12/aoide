@@ -70,6 +70,12 @@ export async function apiGet<T>(path: string, opts: { signal?: AbortSignal; ttl?
               continue
             }
             const json = (await res.json()) as T
+            // Some mirrors answer 200 with `{ detail: 'Upstream API error' }`; that is a failure wearing a success code.
+            if (json && typeof json === 'object' && 'detail' in (json as object) && !('data' in (json as object))) {
+              reportFailure(inst.url)
+              lastErr = new ApiError(502, String((json as unknown as { detail: unknown }).detail))
+              continue
+            }
             reportSuccess(inst.url, performance.now() - t0)
             cache.set(key, { at: Date.now(), value: json })
             noteSource('mirror')

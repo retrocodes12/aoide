@@ -1,15 +1,85 @@
 /** Turn TIDAL's vibrantColor into a usable accent: keep the hue, guarantee contrast on the dark ground. */
-export function accentFrom(hex: string | null | undefined, fallback = '#F1F0EC'): { accent: string; ink: string } {
-  const rgb = parse(hex)
-  if (!rgb) return { accent: fallback, ink: '#151517' }
+type RGB = [number, number, number]
+const LIGHT_INK: RGB = [241, 240, 236] // #F1F0EC, warm off-white
+const DARK_INK: RGB = [21, 21, 23] // #151517
+
+export interface Tint {
+  accent: string
+  ink: string
+  /** Ink at the lowest opacity that still clears 4.5:1 on the tint (body text, upcoming lyric lines). */
+  soft: string
+  /** Ink at the lowest opacity that still clears 3:1 on the tint (past lyric lines, decorative labels). */
+  faint: string
+}
+
+/**
+ * Turn an album's vibrant colour into a header tint plus the ink that sits on it.
+ * The ink is chosen by measured contrast, never by a luminance threshold: light ink is preferred
+ * (white on colour is the signature look) and the tint is darkened for it, but only down to a
+ * lightness where the colour still reads; past that the tint keeps its brightness and takes dark ink.
+ * Every returned ink clears WCAG AA on the returned tint; the soft and faint variants are solved for
+ * the exact opacity that still passes, so a yellow and a navy get different alphas.
+ */
+export function accentFrom(hex: string | null | undefined, fallback = '#F1F0EC'): Tint {
+  const rgb = parse(hex) ?? parse(fallback) ?? DARK_INK
   let [h, s, l] = rgbToHsl(rgb)
   // Header tints read best mid-lightness and clearly saturated.
   if (l < 0.28) l = 0.34
   if (l > 0.62) l = 0.56
   if (s > 0.05 && s < 0.3) s = 0.38
-  const out = hslToHex(h, s, l)
-  const lum = relLum(parse(out)!)
-  return { accent: out, ink: lum > 0.35 ? '#151517' : '#F1F0EC' }
+  const TARGET = 5.5
+  // Light ink, darkening the tint as far as 0.36 lightness.
+  let lt = l
+  let tint = parse(hslToHex(h, s, lt))!
+  while (contrast(LIGHT_INK, tint) < TARGET && lt > 0.36) {
+    lt = Math.max(0.36, lt - 0.02)
+    tint = parse(hslToHex(h, s, lt))!
+  }
+  let ink: RGB = LIGHT_INK
+  if (contrast(LIGHT_INK, tint) < TARGET) {
+    // Too bright a hue to darken without killing it: keep it bright and use dark ink instead.
+    let ld = l
+    tint = parse(hslToHex(h, s, ld))!
+    while (contrast(DARK_INK, tint) < TARGET && ld < 0.72) {
+      ld = Math.min(0.72, ld + 0.02)
+      tint = parse(hslToHex(h, s, ld))!
+    }
+    ink = DARK_INK
+    if (contrast(DARK_INK, tint) < contrast(LIGHT_INK, parse(hslToHex(h, s, 0.3))!)) {
+      // Neither direction worked well; take the stronger of the two extremes.
+      tint = parse(hslToHex(h, s, 0.3))!
+      ink = LIGHT_INK
+    }
+  }
+  return {
+    accent: toHex(tint),
+    ink: toHex(ink),
+    soft: rgba(ink, alphaFor(ink, tint, 4.5, 0.6)),
+    faint: rgba(ink, alphaFor(ink, tint, 3, 0.38)),
+  }
+}
+
+/** WCAG contrast ratio between two opaque colours. */
+export function contrast(a: RGB, b: RGB): number {
+  const la = relLum(a)
+  const lb = relLum(b)
+  return (Math.max(la, lb) + 0.05) / (Math.min(la, lb) + 0.05)
+}
+
+/** Smallest opacity, from `min` upward, at which `ink` over `bg` still clears `ratio`. */
+function alphaFor(ink: RGB, bg: RGB, ratio: number, min: number): number {
+  for (let a = min; a < 1; a += 0.02) {
+    const mixed = ink.map((c, i) => a * c + (1 - a) * bg[i]) as RGB
+    if (contrast(mixed, bg) >= ratio) return Math.round(a * 100) / 100
+  }
+  return 1
+}
+
+function toHex([r, g, b]: RGB): string {
+  return `#${[r, g, b].map((v) => Math.round(v).toString(16).padStart(2, '0')).join('')}`
+}
+function rgba([r, g, b]: RGB, a: number): string {
+  return `rgba(${r}, ${g}, ${b}, ${a})`
 }
 
 function parse(hex: string | null | undefined): [number, number, number] | null {

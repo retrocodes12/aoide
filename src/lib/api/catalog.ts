@@ -31,8 +31,19 @@ export async function searchTracks(term: string, limit = 25, offset = 0, o: Opts
   return r.data
 }
 export async function searchAll(term: string, limit = 12, o: Opts = {}): Promise<SearchAll> {
-  const r = await apiGet<{ data: SearchAll }>(`/search/?${q({ a: term, limit })}`, o)
-  return r.data
+  // On a hifi-api mirror `a=` answers with artists, tracks and top hits only; albums and playlists
+  // have their own parameters. Ask for all three at once and merge, so the Albums and Playlists
+  // tabs are never empty just because a mirror is serving instead of the fallback.
+  const [main, albums, playlists] = await Promise.allSettled([
+    apiGet<{ data: SearchAll }>(`/search/?${q({ a: term, limit })}`, o),
+    apiGet<{ data: SearchAll }>(`/search/?${q({ al: term, limit })}`, o),
+    apiGet<{ data: SearchAll }>(`/search/?${q({ p: term, limit })}`, o),
+  ])
+  if (main.status === 'rejected') throw main.reason
+  const out: SearchAll = { ...main.value.data }
+  if (!out.albums?.items?.length && albums.status === 'fulfilled' && albums.value.data.albums) out.albums = albums.value.data.albums
+  if (!out.playlists?.items?.length && playlists.status === 'fulfilled' && playlists.value.data.playlists) out.playlists = playlists.value.data.playlists
+  return out
 }
 export async function searchAlbums(term: string, limit = 25, o: Opts = {}): Promise<Paged<Album>> {
   const r = await apiGet<{ data: SearchAll }>(`/search/?${q({ al: term, limit })}`, o)

@@ -50,14 +50,15 @@ input { font: inherit; }
 
 /* ---------- mini player capsule ---------- */
 .mini { position: relative; margin: 0 10px 8px; height: var(--mini-h); border-radius: 12px; overflow: hidden; background: var(--tint); box-shadow: 0 10px 30px rgba(0, 0, 0, .55); display: flex; align-items: center; gap: 10px; padding: 0 4px 0 8px; transition: background var(--dur-slow) var(--ease); }
-.mini::before { content: ""; position: absolute; inset: 0; background: rgba(0, 0, 0, .48); }
+.mini::before { content: ""; position: absolute; inset: 0; background: rgba(0, 0, 0, .6); }
 .mini > * { position: relative; }
 .mini__art { width: 42px; height: 42px; border-radius: 6px; object-fit: cover; background: var(--elevated-2); box-shadow: 0 4px 12px rgba(0, 0, 0, .5); flex-shrink: 0; }
 .mini__text { flex: 1; min-width: 0; }
 .mini__title { font-size: 14px; font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.mini__sub { font-size: 12px; color: rgba(255, 255, 255, .72); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.mini__sub.is-preview { color: var(--accent); }
-.mini__sub.is-error { color: #ffb4a8; }
+.mini__sub { font-size: 12px; color: rgba(255, 255, 255, .84); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+/* never orange on the tint: on red and orange records it measured under 2:1 */
+.mini__sub.is-preview { color: rgba(255, 255, 255, .84); }
+.mini__sub.is-error { color: #fff; }
 .mini__bar { position: absolute; left: 10px; right: 10px; bottom: 0; height: 2px; background: rgba(255, 255, 255, .22); }
 .mini__bar i { display: block; height: 100%; background: var(--fg); }
 .mini .iconbtn { width: 40px; height: 40px; }
