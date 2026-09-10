@@ -30,6 +30,9 @@
   --accent-hover: #ff9550;
   --accent-ink: #000000;
   --tint: #4a4a4a;             /* per-page, from the record's artwork */
+  --tint-ink: #ffffff;         /* text that reads on --tint; set with it */
+  --tint-ink-soft: rgba(255, 255, 255, 0.72);
+  --tint-ink-faint: rgba(255, 255, 255, 0.45);
 
   --font: 'Figtree', -apple-system, 'SF Pro Text', system-ui, 'Segoe UI', Roboto, sans-serif;
   --radius: 10px;

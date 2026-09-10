@@ -1,5 +1,5 @@
 /**
- * Instance registry. Sleeve talks to hifi-api compatible mirrors, the same ones
+ * Instance registry. Aoide talks to hifi-api compatible mirrors, the same ones
  * Monochrome lists in INSTANCES.md. Users can add their own; the uptime worker
  * refreshes the public list on boot.
  */

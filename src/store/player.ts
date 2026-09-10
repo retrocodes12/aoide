@@ -170,7 +170,11 @@ export const usePlayer = create<PlayerState>((set, get) => {
       if (position > 3 || index <= 0) return get().seek(0)
       void loadIndex(index - 1)
     },
-    seek: (t) => engine.seek(t),
+    seek: (t) => {
+      // Never seek past what the media actually holds (previews end at 30 s); a seek past the end wedges the loader.
+      const max = engine.duration || get().duration
+      engine.seek(max ? Math.min(t, Math.max(0, max - 1)) : t)
+    },
     setVolume: (v) => {
       engine.setVolume(v)
       localStorage.setItem(VOL_KEY, String(v))

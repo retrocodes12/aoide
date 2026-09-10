@@ -115,6 +115,10 @@ export function LyricsScreen() {
   const { toggle, seek } = usePlayer.getState()
   const res = useResource((signal) => (track ? getLyrics(track, { signal }) : Promise.resolve(null)), [track?.id])
   const ref = useRef<HTMLDivElement>(null)
+  const duration = usePlayer((s) => s.duration)
+  const isPreview = usePlayer((s) => Boolean(s.stream?.isPreview))
+  // On a 30-second preview the lyrics still cover the whole song; lines past the clip cannot be reached.
+  const reachable = (t: number) => !isPreview || !duration || t < duration - 0.5
   const synced = res.data?.synced
   const active = useMemo(() => {
     if (!synced?.length) return -1
@@ -141,8 +145,9 @@ export function LyricsScreen() {
           {res.loading ? <div className="lyrics__empty">Looking for lyrics…</div> : !res.data || (!synced && !res.data.plain) ? <div className="lyrics__empty">We don't have lyrics for this one.</div> : (
             <div className="lyrics__list" ref={ref}>
               {synced ? synced.map((l, i) => (
-                <button key={i} className={`lyrics__line${i === active ? ' is-active' : i < active ? ' is-past' : ''}`} data-testid="lyric_line" onClick={() => seek(l.t)}>{l.line || '♪'}</button>
+                <button key={i} className={`lyrics__line${i === active ? ' is-active' : i < active ? ' is-past' : ''}${reachable(l.t) ? '' : ' is-beyond'}`} data-testid="lyric_line" disabled={!reachable(l.t)} aria-disabled={!reachable(l.t)} onClick={() => reachable(l.t) && seek(l.t)}>{l.line || '♪'}</button>
               )) : res.data.plain!.split('\n').map((l, i) => <div key={i} className="lyrics__line lyrics__line--plain">{l || ' '}</div>)}
+              {isPreview && synced && synced.some((l) => !reachable(l.t)) && <div className="lyrics__note">Only the first 30 seconds play on this mirror; the rest of the lyrics are shown for reading.</div>}
             </div>
           )}
           <div className="lyrics__foot">

@@ -1,6 +1,6 @@
 import type { ReactNode } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { IChevronLeft, IHeart, IPause, IPlay, IShuffle } from './Icons'
+import { IChevronLeft, IHeart, IPause, IPlay, IShuffle, IAlbum } from './Icons'
 
 /**
  * Album / playlist head: Spotify's tinted ground, Apple Music's composition. Centred artwork
@@ -29,7 +29,7 @@ export function DetailHead({ image, title, artist, meta, badge, description, lik
         <span className="topbar__spacer" />
         {actions}
       </div>
-      {liked ? <div className="head__liked"><IHeart filled /></div> : <img className="head__art" src={image} alt="" width={248} height={248} fetchPriority="high" />}
+      {liked ? <div className="head__liked"><IHeart filled /></div> : image ? <img className="head__art" src={image} alt="" width={248} height={248} fetchPriority="high" /> : <div className="head__art head__art--blank"><IAlbum /></div>}
       <div className="head__copy">
         <h1 className="head__title" data-testid="detail_title">{title || ' '}</h1>
         {artist && <div className="head__artist">{artist}</div>}

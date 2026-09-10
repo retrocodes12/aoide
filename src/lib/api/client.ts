@@ -53,11 +53,14 @@ export async function apiGet<T>(path: string, opts: { signal?: AbortSignal; ttl?
       }
       const instances = orderedInstances()
       let lastErr: Error | null = null
-      for (let pass = 0; pass < 2; pass++) {
+      mirrors: for (let pass = 0; pass < 2; pass++) {
         for (const inst of instances) {
+          // The boot probe may have benched everything while we were waiting on a timeout.
+          if (allCooling()) break mirrors
+          if ((inst.coolUntil ?? 0) > Date.now() && instances.some((i) => (i.coolUntil ?? 0) <= Date.now())) continue
           const t0 = performance.now()
           try {
-            const res = await fetch(inst.url + path, { signal: timeout(pass === 0 ? 7000 : 12000), cache: 'no-store' })
+            const res = await fetch(inst.url + path, { signal: timeout(pass === 0 ? 6000 : 10000), cache: 'no-store' })
             if (res.status === 404) throw new ApiError(404, 'Not found')
             if (!res.ok) {
               // 5xx / 401 / 403 mean the mirror itself is broken right now: bench it at once.

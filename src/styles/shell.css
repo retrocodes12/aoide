@@ -81,10 +81,15 @@ input { font: inherit; }
 .sheet__label { padding: 12px 20px 4px; font-size: 13px; font-weight: 700; color: var(--subdued); }
 .sheet__row { display: flex; gap: 10px; padding: 8px 20px; align-items: center; }
 
+.lyrics .topbar .mini__title, .lyrics .topbar .iconbtn { color: var(--tint-ink); }
+.lyrics .topbar .mini__sub { color: var(--tint-ink-soft); }
+
 /* ---------- toasts ---------- */
-.toasts { position: absolute; left: 50%; bottom: calc(var(--tabbar-h) + var(--mini-h) + var(--sab) + 16px); transform: translateX(-50%); z-index: 50; pointer-events: none; width: calc(100% - 40px); display: flex; justify-content: center; }
+.toasts { position: absolute; left: 50%; bottom: calc(var(--tabbar-h) + var(--sab) + 16px); transform: translateX(-50%); z-index: 50; pointer-events: none; width: calc(100% - 40px); display: flex; justify-content: center; }
 .toast { pointer-events: auto; background: var(--accent); color: var(--accent-ink); padding: 12px 16px; border-radius: 10px; font-size: 14px; font-weight: 600; box-shadow: 0 6px 20px rgba(0, 0, 0, .5); text-align: center; animation: toast-in var(--dur-slow) var(--spring); max-width: 100%; }
 @keyframes toast-in { from { opacity: 0; transform: translateY(12px); } }
+
+.app.has-track .toasts { bottom: calc(var(--tabbar-h) + var(--mini-h) + var(--sab) + 16px); }
 
 /* ---------- inputs ---------- */
 .input { width: 100%; height: 44px; padding: 0 14px; border-radius: 8px; background: var(--elevated-2); border: 1px solid transparent; color: var(--fg); outline: 0; font-size: 15px; }

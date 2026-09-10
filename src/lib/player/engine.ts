@@ -149,7 +149,8 @@ export class Engine {
     this.audio.pause()
   }
   seek(t: number) {
-    this.audio.currentTime = Math.max(0, Math.min(t, this.audio.duration || t))
+    const d = this.audio.duration
+    this.audio.currentTime = Math.max(0, Number.isFinite(d) && d > 0 ? Math.min(t, d - 0.3) : t)
     this.emit('time', this.audio.currentTime, this.audio.duration || 0)
   }
   setVolume(v: number) {
