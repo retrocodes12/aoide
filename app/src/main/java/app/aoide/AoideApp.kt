@@ -15,5 +15,8 @@ class AoideApp : Application() {
         Instances.load()
         Library.init(this)
         CoroutineScope(Dispatchers.IO).launch { Instances.refreshFromUptime() }
+        if (BuildConfig.DEBUG) runCatching {
+            Class.forName("app.aoide.debug.DebugInit").getMethod("init", Application::class.java).invoke(null, this)
+        }
     }
 }
