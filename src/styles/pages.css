@@ -96,9 +96,9 @@
 .lyrics { position: relative; height: 100%; background: var(--tint); display: flex; flex-direction: column; }
 .lyrics__list { flex: 1; overflow-y: auto; padding: 8px 20px 40vh; scrollbar-width: none; mask-image: linear-gradient(to bottom, transparent, #000 8%, #000 88%, transparent); }
 .lyrics__list::-webkit-scrollbar { display: none; }
-.lyrics__line { display: block; width: 100%; text-align: left; font-size: 26px; font-weight: 800; letter-spacing: -.4px; line-height: 1.3; color: var(--tint-ink-soft); padding: 6px 0; transition: color var(--dur) var(--ease); }
+.lyrics__line { display: block; width: 100%; text-align: left; font-size: 26px; font-weight: 800; letter-spacing: -.4px; line-height: 1.3; color: var(--tint-ink-soft); padding: 6px 0; transform-origin: left center; transition: color var(--dur) var(--ease), transform var(--dur-slow) var(--spring); }
 .lyrics__line.is-past { color: var(--tint-ink-faint); }
-.lyrics__line.is-active { color: var(--tint-ink); }
+.lyrics__line.is-active { color: var(--tint-ink); transform: scale(1.04); }
 .lyrics__line.is-beyond { color: var(--tint-ink-faint); opacity: .55; cursor: default; }
 .lyrics__line--plain { font-size: 20px; color: var(--tint-ink); font-weight: 600; }
 .lyrics__note { margin-top: 18px; font-size: 13px; font-weight: 600; color: var(--tint-ink-soft); }
@@ -135,9 +135,16 @@
 .instance { display: flex; align-items: center; gap: 10px; margin: 4px var(--pad); padding: 10px 4px 10px 12px; border-radius: 8px; background: var(--highlight); }
 .instance__main { flex: 1; min-width: 0; }
 .instance__url { font-size: 14px; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.instance__tags { font-size: 12px; color: var(--muted); }
+.instance__tags { font-size: 12px; color: var(--subdued); }
 .instance__status { font-size: 12px; color: var(--subdued); }
 .instance__status.is-ok { color: var(--accent); }
 .instance__add { display: flex; gap: 8px; padding: 8px var(--pad); }
 .settings__row { display: flex; gap: 8px; padding: 4px var(--pad); flex-wrap: wrap; }
 .settings__about { padding: 0 var(--pad) 20px; font-size: 14px; line-height: 1.6; color: var(--subdued); }
+
+/* now playing: failure state sits where the seek bar would otherwise lie */
+.np__error { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin: 0 var(--pad) 8px; padding: 10px 12px 10px 14px; border-radius: 12px; background: rgba(0, 0, 0, .28); color: var(--tint-ink); font-size: 14px; font-weight: 600; }
+.np__error .pill { height: 36px; padding: 0 14px; font-size: 14px; flex-shrink: 0; }
+.seek:disabled { opacity: .45; }
+.settings__notice { margin: 0 var(--pad) 10px; padding: 12px 14px; border-radius: 12px; background: rgba(255, 122, 31, .12); border: 1px solid rgba(255, 122, 31, .35); color: var(--fg); font-size: 13px; line-height: 1.45; }
+.radio:disabled { opacity: .45; }

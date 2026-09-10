@@ -38,7 +38,7 @@ export function ArtistPage() {
   const albums = useMemo(() => [...(disco.data?.albums ?? []).filter((al) => filter === 'ALL' || (al.type ?? 'ALBUM') === filter)].sort((x, y) => (y.releaseDate ?? '').localeCompare(x.releaseDate ?? '')), [disco.data, filter])
   const counts = { ALBUM: 0, EP: 0, SINGLE: 0 } as Record<string, number>
   for (const al of disco.data?.albums ?? []) counts[al.type ?? 'ALBUM'] = (counts[al.type ?? 'ALBUM'] ?? 0) + 1
-  if (artist.error) return <div className="page"><div className="topbar"><Link to="/" className="iconbtn" aria-label="Home"><IChevronLeft /></Link></div><ErrorState error={artist.error} retry={artist.reload} /></div>
+  if (artist.error) return <div className="page"><div className="topbar"><Link to="/" className="iconbtn" aria-label="Home"><IChevronLeft /></Link></div><ErrorState error={artist.error} retry={artist.reload} what="artist" /></div>
   const tracks = top.data ?? []
   const ctx = { kind: 'artist', title: a?.name ?? '', href: `/artist/${id}` }
   const thisPlaying = context?.href === ctx.href && (status === 'playing' || status === 'buffering' || status === 'loading')

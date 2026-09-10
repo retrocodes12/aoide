@@ -64,7 +64,7 @@
 .row__liked svg { width: 26px; height: 26px; }
 .row__text { flex: 1; min-width: 0; text-align: left; }
 .row button { text-align: left; }
-.row__title { font-size: 16px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.row__title { display: block; font-size: 16px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .row__title--bold { font-weight: 600; }
 .row.is-current .row__title, .row.is-current .row__num { color: var(--accent); }
 .row__sub { display: flex; align-items: center; gap: 6px; font-size: 13px; color: var(--subdued); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }

@@ -1,5 +1,6 @@
 import { getManifest } from '../api/catalog'
 import { nativeManifest } from '../api/client'
+import { noteSource } from '../api/instances'
 import type { Quality, ResolvedStream, Track } from '../api/types'
 import type shaka from 'shaka-player'
 
@@ -24,6 +25,7 @@ export async function resolveStream(track: Track, quality: Quality, signal?: Abo
     const m = await getManifest(track.id, quality, { signal })
     const decoded = safeAtob(m.manifest)
     const isPreview = m.assetPresentation === 'PREVIEW'
+    noteSource('mirror')
     if (decoded.includes('<MPD')) {
       const blob = new Blob([decoded], { type: 'application/dash+xml' })
       const url = URL.createObjectURL(blob)
@@ -42,9 +44,21 @@ export async function resolveStream(track: Track, quality: Quality, signal?: Abo
   } catch (mirrorErr) {
     if (signal?.aborted) throw mirrorErr
     const n = await nativeManifest(track.id, signal, quality)
+    noteSource('tidal')
     const fmt = n.formats?.[0] ?? quality
-    return { url: n.uri, mimeType: 'application/dash+xml', isPreview: n.trackPresentation === 'PREVIEW', quality: fmt === 'FLAC' ? 'LOSSLESS' : fmt.startsWith('AAC') || fmt.startsWith('HEAAC') ? 'HIGH' : fmt, source: 'tidal' }
+    const tier = fmt === 'FLAC' ? 'LOSSLESS' : fmt.startsWith('HEAAC') ? 'LOW' : fmt.startsWith('AAC') ? 'HIGH' : fmt
+    return { url: n.uri, mimeType: 'application/dash+xml', isPreview: n.trackPresentation === 'PREVIEW', quality: tier, source: 'tidal' }
   }
+}
+
+/** Shaka's numeric codes, in words a listener can act on. Never show the raw number. */
+function friendlyError(code?: number): string {
+  if (!code) return "Couldn't play this song"
+  const category = Math.floor(code / 1000)
+  if (category === 1) return 'Network error while loading this song'
+  if (category === 3) return "This song's stream couldn't be decoded"
+  if (category === 4) return "This song's stream was unreadable"
+  return "Couldn't play this song"
 }
 
 function safeAtob(s: string): string {
@@ -80,7 +94,7 @@ export class Engine {
     this.audio.addEventListener('pause', () => this.emit('state', 'paused'))
     this.audio.addEventListener('waiting', () => this.emit('state', 'buffering'))
     this.audio.addEventListener('playing', () => this.emit('state', 'playing'))
-    this.audio.addEventListener('error', () => this.emit('state', 'error', 'Playback failed'))
+    this.audio.addEventListener('error', () => this.emit('state', 'error', "Couldn't play this song"))
     const tick = () => {
       if (!this.audio.paused) this.emit('time', this.audio.currentTime, this.audio.duration || 0)
       this.raf = requestAnimationFrame(tick)
@@ -107,7 +121,7 @@ export class Engine {
     })
     p.addEventListener('error', (e: Event) => {
       const d = (e as unknown as { detail?: { code?: number; message?: string } }).detail
-      this.emit('state', 'error', `Stream error${d?.code ? ' ' + d.code : ''}`)
+      this.emit('state', 'error', friendlyError(d?.code))
     })
     this.player = p
     return p
@@ -116,6 +130,8 @@ export class Engine {
   async load(track: Track, quality: Quality, autoplay: boolean, signal?: AbortSignal): Promise<ResolvedStream> {
     const seq = ++this.loadSeq
     this.emit('state', 'loading')
+    // Silence whatever was playing: a failed load must not leave the previous song running under an error.
+    this.audio.pause()
     const stream = await resolveStream(track, quality, signal)
     if (seq !== this.loadSeq) {
       stream.revoke?.()
@@ -133,7 +149,7 @@ export class Engine {
     }
     if (seq !== this.loadSeq) throw new DOMException('superseded', 'AbortError')
     this.emit('loaded', stream)
-    this.emit('time', 0, this.audio.duration || track.duration)
+    this.emit('time', 0, Number.isFinite(this.audio.duration) ? this.audio.duration : 0)
     if (autoplay) await this.play()
     else this.emit('state', 'paused')
     return stream

@@ -21,6 +21,10 @@ interface PlayerState {
   repeat: Repeat
   quality: Quality
   stream: ResolvedStream | null
+  /** True once the engine holds media for the current index; false while loading or on a restored session. */
+  loaded: boolean
+  /** The queue as it was before shuffle, so turning shuffle off restores the order. */
+  unshuffled: Track[] | null
   /** Where the queue came from, for the "playing from" label. */
   context: { kind: string; title: string; href?: string } | null
   history: number[]
@@ -77,13 +81,17 @@ let loadAbort: AbortController | null = null
 /** False until the engine actually holds media; a hydrated session starts paused with nothing loaded. */
 let engineLoaded = false
 let lastSave = 0
+/** Consecutive songs that failed to load; after three we stop skipping ahead and ask the listener. */
+let failStreak = 0
 
 export const usePlayer = create<PlayerState>((set, get) => {
   const engine = getEngine()
   engine.setVolume(Number.isFinite(savedVol) ? savedVol : 0.8)
 
   engine.on('time', (position, duration) => {
-    const dur = duration || get().current()?.duration || 0
+    // Old media can still tick while the next song is loading or has failed; only the loaded song may drive the transport.
+    if (!get().loaded) return
+    const dur = duration || get().duration || 0
     set({ position, duration: dur })
     const now = Date.now()
     if (now - lastPosPush > 4000) {
@@ -93,15 +101,18 @@ export const usePlayer = create<PlayerState>((set, get) => {
     }
   })
   engine.on('state', (s, message) => {
-    if (s === 'error') set({ status: 'error', error: message ?? 'Playback failed' })
+    if (s === 'error') set({ status: 'error', error: message ?? "Couldn't play this song" })
     else set({ status: s, error: null })
-    if (s === 'playing') void msSetState('playing')
+    if (s === 'playing') {
+      failStreak = 0
+      void msSetState('playing')
+    }
     else if (s === 'paused') {
       void msSetState('paused')
       saveSession(true)
     }
   })
-  engine.on('loaded', (stream) => set({ stream }))
+  engine.on('loaded', (stream) => set({ stream, loaded: true }))
   engine.on('ended', () => {
     const { repeat } = get()
     if (repeat === 'one') {
@@ -132,7 +143,7 @@ export const usePlayer = create<PlayerState>((set, get) => {
     loadAbort?.abort()
     loadAbort = new AbortController()
     engineLoaded = false
-    set({ index: i, status: 'loading', error: null, position: startAt, duration: track.duration, stream: null })
+    set({ index: i, status: 'loading', error: null, position: startAt, duration: 0, stream: null, loaded: false })
     useLibrary.getState().recordPlay(track)
     useUI.getState().setTintFrom(track.album?.vibrantColor)
     updateMediaSession(track)
@@ -144,7 +155,13 @@ export const usePlayer = create<PlayerState>((set, get) => {
       if (stream.isPreview) useUI.getState().notePreview()
     } catch (e) {
       if ((e as Error).name === 'AbortError') return
-      set({ status: 'error', error: (e as Error).message || 'Could not load this track' })
+      failStreak++
+      if (failStreak >= 3 || i + 1 >= get().queue.length) {
+        // Three dead songs in a row is not a bad song, it is a dead connection or a dead mirror. Stop and say so.
+        set({ status: 'error', error: "Playback isn't working right now. Check your connection, then try again." })
+        return
+      }
+      set({ status: 'error', error: friendly((e as Error).message) })
       useUI.getState().toast(`Couldn't play "${track.title}". Trying the next one.`)
       // auto-advance after a beat so a dead track doesn't stall the queue
       setTimeout(() => {
@@ -184,6 +201,8 @@ export const usePlayer = create<PlayerState>((set, get) => {
     repeat: session?.repeat ?? 'off',
     quality: savedQ,
     stream: null,
+    loaded: false,
+    unshuffled: null,
     context: session?.context ?? null,
     history: [],
 
@@ -194,14 +213,17 @@ export const usePlayer = create<PlayerState>((set, get) => {
       if (!playable.length) return
       let queue = playable
       let index = Math.max(0, Math.min(start, playable.length - 1))
+      let unshuffled: Track[] | null = null
       if (get().shuffle) {
+        unshuffled = playable
         const first = playable[index]
         const rest = playable.filter((_, i) => i !== index)
         shuffleInPlace(rest)
         queue = [first, ...rest]
         index = 0
       }
-      set({ queue, context, history: [] })
+      failStreak = 0
+      set({ queue, context, history: [], unshuffled })
       void loadIndex(index)
     },
     playTrack: (track, context) => get().playTracks([track], 0, context ?? { kind: 'track', title: track.title }),
@@ -212,7 +234,10 @@ export const usePlayer = create<PlayerState>((set, get) => {
       if (!engineLoaded) return void loadIndex(index, true, position)
       if (status === 'playing' || status === 'buffering') engine.pause()
       else if (status === 'paused') void engine.play()
-      else if (status === 'error') void loadIndex(index)
+      else if (status === 'error') {
+        failStreak = 0
+        void loadIndex(index)
+      }
     },
     next: () => {
       const { index, queue, repeat } = get()
@@ -249,8 +274,18 @@ export const usePlayer = create<PlayerState>((set, get) => {
         const cur = queue[index]
         const rest = queue.filter((_, i) => i !== index)
         shuffleInPlace(rest)
-        set({ shuffle: true, queue: [cur, ...rest], index: 0 })
-      } else set({ shuffle: false })
+        set({ shuffle: true, queue: [cur, ...rest], index: 0, unshuffled: queue })
+      } else {
+        // Back to the order the listener started with, keeping the current song where it is.
+        const { unshuffled } = get()
+        const cur = queue[index]
+        if (unshuffled && cur) {
+          const known = new Set(unshuffled.map((t) => t.id))
+          const restored = [...unshuffled, ...queue.filter((t) => !known.has(t.id))].filter((t) => queue.some((q) => q.id === t.id))
+          const idx = Math.max(0, restored.findIndex((t) => t.id === cur.id))
+          set({ shuffle: false, queue: restored, index: idx, unshuffled: null })
+        } else set({ shuffle: false, unshuffled: null })
+      }
       saveSession(true)
     },
     cycleRepeat: () => {
@@ -301,12 +336,18 @@ export const usePlayer = create<PlayerState>((set, get) => {
     },
     clearUpcoming: () => {
       const { queue, index } = get()
-      set({ queue: queue.slice(0, index + 1) })
+      set({ queue: queue.slice(0, index + 1), unshuffled: null })
       saveSession(true)
     },
     jumpTo: (i) => void loadIndex(i),
   }
 })
+
+/** Strip transport jargon out of a thrown message before it reaches the mini player. */
+function friendly(msg: string): string {
+  if (!msg || /shaka|error \d|manifest|fetch|network/i.test(msg)) return "Couldn't play this song"
+  return msg
+}
 
 function shuffleInPlace<T>(a: T[]) {
   for (let i = a.length - 1; i > 0; i--) {

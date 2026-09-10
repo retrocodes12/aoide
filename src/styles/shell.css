@@ -22,6 +22,8 @@ input { font: inherit; }
 .page--center { display: flex; flex-direction: column; }
 .page__center { flex: 1; display: grid; place-items: center; }
 .bottom { position: absolute; left: 0; right: 0; bottom: 0; z-index: 20; padding-bottom: var(--sab); background: linear-gradient(to bottom, rgba(18, 18, 18, 0) 0, rgba(18, 18, 18, .85) 28px, var(--ground) 100%); pointer-events: none; }
+/* a taller fade so rows are not sliced mid-height where they pass under the dock */
+.bottom::before { content: ""; position: absolute; left: 0; right: 0; bottom: 100%; height: 56px; background: linear-gradient(to top, rgba(18, 18, 18, .92), rgba(18, 18, 18, 0)); pointer-events: none; }
 .bottom > * { pointer-events: auto; }
 
 /* ---------- top bars ---------- */
@@ -55,6 +57,7 @@ input { font: inherit; }
 .mini__title { font-size: 14px; font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .mini__sub { font-size: 12px; color: rgba(255, 255, 255, .72); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .mini__sub.is-preview { color: var(--accent); }
+.mini__sub.is-error { color: #ffb4a8; }
 .mini__bar { position: absolute; left: 10px; right: 10px; bottom: 0; height: 2px; background: rgba(255, 255, 255, .22); }
 .mini__bar i { display: block; height: 100%; background: var(--fg); }
 .mini .iconbtn { width: 40px; height: 40px; }
@@ -98,6 +101,8 @@ input { font: inherit; }
 @keyframes toast-in { from { opacity: 0; transform: translateY(12px); } }
 
 .app.has-track .toasts { bottom: calc(var(--tabbar-h) + var(--mini-h) + var(--sab) + 16px); }
+/* with now playing open the toast sits above the transport instead of on the play disc */
+.app .toasts.is-np { bottom: calc(var(--sab) + 96px); }
 
 /* ---------- inputs ---------- */
 .input { width: 100%; height: 44px; padding: 0 14px; border-radius: 8px; background: var(--elevated-2); border: 1px solid transparent; color: var(--fg); outline: 0; font-size: 15px; }

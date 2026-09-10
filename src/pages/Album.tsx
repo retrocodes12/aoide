@@ -30,7 +30,7 @@ export function AlbumPage() {
   const album = res.data?.album
   useDocumentTitle(album?.title ?? 'Album')
   useEffect(() => { if (album) { recordAlbum(album); setTintFrom(album.vibrantColor) } }, [album, recordAlbum, setTintFrom])
-  if (res.error) return <div className="page"><div className="topbar"><Link to="/" className="iconbtn" aria-label="Home">‹</Link></div><ErrorState error={res.error} retry={res.reload} /></div>
+  if (res.error) return <div className="page"><div className="topbar"><Link to="/" className="iconbtn" aria-label="Home">‹</Link></div><ErrorState error={res.error} retry={res.reload} what="album" /></div>
   const tracks = res.data?.tracks ?? []
   const artist = album ? primaryArtist(album) : undefined
   const total = tracks.reduce((a, t) => a + t.duration, 0)

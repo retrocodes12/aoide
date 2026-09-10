@@ -1,4 +1,4 @@
-import { allCooling, orderedInstances, reportFailure, reportSuccess } from './instances'
+import { allCooling, noteSource, orderedInstances, reportFailure, reportSuccess } from './instances'
 
 export class ApiError extends Error {
   status: number
@@ -46,6 +46,7 @@ export async function apiGet<T>(path: string, opts: { signal?: AbortSignal; ttl?
         try {
           const json = (await nativeFallback(path)) as T
           cache.set(key, { at: Date.now(), value: json })
+          noteSource('tidal')
           return json
         } catch {
           /* fall through to the mirrors anyway */
@@ -71,6 +72,7 @@ export async function apiGet<T>(path: string, opts: { signal?: AbortSignal; ttl?
             const json = (await res.json()) as T
             reportSuccess(inst.url, performance.now() - t0)
             cache.set(key, { at: Date.now(), value: json })
+            noteSource('mirror')
             return json
           } catch (e) {
             if (e instanceof ApiError && e.status === 404) throw e
@@ -83,8 +85,11 @@ export async function apiGet<T>(path: string, opts: { signal?: AbortSignal; ttl?
       try {
         const json = (await nativeFallback(path)) as T
         cache.set(key, { at: Date.now(), value: json })
+        noteSource('tidal')
         return json
-      } catch {
+      } catch (e) {
+        // A definite not-found from TIDAL beats a mirror timeout: the thing does not exist.
+        if (e instanceof ApiError && e.status === 404) throw e
         throw lastErr ?? new ApiError(0, 'No instances configured')
       }
     })()
@@ -167,7 +172,7 @@ export interface NativeManifest {
 export async function nativeManifest(id: number, signal?: AbortSignal, quality: string = 'LOSSLESS'): Promise<NativeManifest> {
   const tok = await nativeToken(signal)
   const p = new URLSearchParams({ adaptive: 'false', manifestType: 'MPEG_DASH', uriScheme: 'HTTPS', usage: 'PLAYBACK', countryCode: 'US' })
-  const formats = quality === 'HIGH' || quality === 'LOW' ? ['AACLC', 'HEAACV1', 'FLAC'] : ['FLAC', 'AACLC', 'HEAACV1']
+  const formats = quality === 'LOW' ? ['HEAACV1', 'AACLC'] : quality === 'HIGH' ? ['AACLC', 'HEAACV1'] : ['FLAC', 'AACLC', 'HEAACV1']
   for (const f of formats) p.append('formats', f)
   const res = await fetch(`https://openapi.tidal.com/v2/trackManifests/${id}?${p}`, {
     headers: { Authorization: `Bearer ${tok}`, Accept: 'application/vnd.api+json' },

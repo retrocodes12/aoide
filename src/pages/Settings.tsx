@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import { addInstance, getInstances, removeInstance, resetInstances, refreshFromUptime, subscribe, type Instance } from '../lib/api/instances'
 import { clearApiCache } from '../lib/api/client'
 import type { Quality } from '../lib/api/types'
-import { useDocumentTitle } from '../lib/hooks'
+import { useDocumentTitle, useMirrorsDown } from '../lib/hooks'
 import { usePlayer } from '../store/player'
 import { useUI } from '../store/ui'
 import { IChevronLeft, ITrash } from '../components/Icons'
@@ -26,6 +26,8 @@ export function Settings() {
   const setQuality = usePlayer((s) => s.setQuality)
   const toast = useUI((s) => s.toast)
   const setTintFrom = useUI((s) => s.setTintFrom)
+  const down = useMirrorsDown()
+  const hasTrack = usePlayer((s) => s.index >= 0)
   useEffect(() => subscribe((l) => setInstances([...l])), [])
   useEffect(() => setTintFrom('#4a4a4a'), [setTintFrom])
 
@@ -56,20 +58,24 @@ export function Settings() {
   return (
     <div className="page" data-testid="settings">
       <div className="topbar"><button className="iconbtn" aria-label="Back" onClick={() => (window.history.length > 1 ? nav(-1) : nav('/'))}><IChevronLeft /></button><span className="topbar__title">Settings</span><span style={{ width: 44 }} /></div>
-      <div className="settings__sec"><h2 className="settings__title">Streaming quality</h2><p className="settings__hint">Applies to the next song, and reloads the one playing.</p></div>
-      {QUALITIES.map((q) => (
-        <button key={q.id} className={`radio${quality === q.id ? ' is-on' : ''}`} role="radio" aria-checked={quality === q.id} data-testid={`quality_${q.id}`} onClick={() => setQuality(q.id)}>
-          <span className="radio__mark" aria-hidden /><span><b>{q.label}</b><small>{q.note}</small></span>
+      <div className="settings__sec"><h2 className="settings__title">Streaming quality</h2><p className="settings__hint">{down ? 'Every mirror is down, so songs come straight from TIDAL as 30-second previews. Lossless and the AAC tiers still apply; Hi-Res needs a mirror.' : 'Applies to the next song, and reloads the one playing.'}</p></div>
+      {QUALITIES.map((q) => {
+        const unavailable = down && q.id === 'HI_RES_LOSSLESS'
+        return (
+        <button key={q.id} className={`radio${quality === q.id ? ' is-on' : ''}`} role="radio" aria-checked={quality === q.id} aria-disabled={unavailable} disabled={unavailable} data-testid={`quality_${q.id}`} onClick={() => { setQuality(q.id); if (hasTrack) toast(`${q.label}. Reloading the current song.`) }}>
+          <span className="radio__mark" aria-hidden /><span><b>{q.label}</b><small>{unavailable ? 'Not available on the TIDAL fallback' : q.note}</small></span>
         </button>
-      ))}
+        )
+      })}
       <div className="settings__sec"><h2 className="settings__title">Instances</h2><p className="settings__hint">Aoide reads the catalogue from hifi-api compatible mirrors, the same ones Monochrome lists, and fails over between them. Public mirrors usually serve 30-second previews; a mirror backed by a subscribed account serves full songs. Yours are tried first.</p></div>
+      {down && <div className="settings__notice" role="status" data-testid="fallback_notice">No mirror is answering right now. Aoide is browsing TIDAL's catalogue directly, previews only, and will switch back the moment a mirror returns.</div>}
       {instances.map((inst) => {
         const st = checking === inst.url ? 'checking…' : status[inst.url]
         return (
           <div key={inst.url} className="instance" data-testid="instance_row">
             <div className="instance__main">
               <div className="instance__url">{inst.url.replace(/^https?:\/\//, '')}</div>
-              <div className="instance__tags">{[inst.isUser ? 'yours' : 'public', inst.version && inst.version !== 'custom' ? `v${inst.version}` : null, inst.coolUntil && inst.coolUntil > Date.now() ? 'cooling down' : null, inst.lastLatency ? `${Math.round(inst.lastLatency)} ms` : null].filter(Boolean).join(' · ')}</div>
+              <div className="instance__tags">{[inst.isUser ? 'yours' : 'public', inst.version && inst.version !== 'custom' ? `v${inst.version}` : null, inst.coolUntil && inst.coolUntil > Date.now() ? 'down' : null, inst.lastLatency ? `${Math.round(inst.lastLatency)} ms` : null].filter(Boolean).join(' · ')}</div>
               {st && <div className={`instance__status${st.includes('ms') ? ' is-ok' : ''}`} data-testid="instance_status">{st}</div>}
             </div>
             <button className="pill pill--outline" onClick={() => check(inst)} disabled={checking !== null}>Test</button>

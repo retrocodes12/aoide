@@ -79,7 +79,18 @@ function Results({ term, tab, setTab }: { term: string; tab: Tab; setTab: (t: Ta
   const artists = all.data?.artists?.items ?? []
   const albums = all.data?.albums?.items ?? []
   const playlists = all.data?.playlists?.items ?? []
-  const nothing = !all.loading && !all.error && !songs.loading && !songs.data?.length && !artists.length && !albums.length && !playlists.length
+  // A cold mirror can answer the very first query with an empty list. Ask once more before calling it a miss.
+  const [retried, setRetried] = useState(false)
+  useEffect(() => setRetried(false), [term])
+  const settled = !all.loading && !songs.loading
+  const emptyAnswer = settled && !all.error && !songs.error && !songs.data?.length && !artists.length && !albums.length && !playlists.length
+  useEffect(() => {
+    if (!emptyAnswer || retried) return
+    const t = setTimeout(() => { setRetried(true); all.reload(); songs.reload() }, 700)
+    return () => clearTimeout(t)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [emptyAnswer, retried])
+  const nothing = emptyAnswer && retried
   const ctx = { kind: 'search', title: `“${term}”` }
   return (
     <div data-testid="results">
@@ -97,8 +108,8 @@ function Results({ term, tab, setTab }: { term: string; tab: Tab; setTab: (t: Ta
       )}
       {(tab === 'all' || tab === 'tracks') && !all.error && (
         <Section title="Songs">
-          {songs.loading ? <SkeletonRows n={4} /> : (songs.data ?? []).map((t, i) => <TrackRow key={t.id} track={t} onPlay={() => playTracks(songs.data!, i, ctx)} sub={`${t.artists?.map((a) => a.name).join(', ') ?? t.artist?.name ?? ''}${t.album ? ` · ${t.album.title}` : ''}`} />)}
-          {!songs.loading && !songs.data?.length && <Empty title={`No songs for “${term}”`} />}
+          {songs.loading || (emptyAnswer && !retried) ? <SkeletonRows n={4} /> : (songs.data ?? []).map((t, i) => <TrackRow key={t.id} track={t} onPlay={() => playTracks(songs.data!, i, ctx)} sub={`${t.artists?.map((a) => a.name).join(', ') ?? t.artist?.name ?? ''}${t.album ? ` · ${t.album.title}` : ''}`} />)}
+          {settled && !songs.data?.length && !emptyAnswer && <Empty title={`No songs for “${term}”`} />}
         </Section>
       )}
       {(tab === 'all' || tab === 'artists') && artists.length > 0 && (

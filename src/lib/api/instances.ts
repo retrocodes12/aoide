@@ -191,7 +191,28 @@ export async function refreshFromUptime(signal?: AbortSignal): Promise<void> {
   }
 }
 
-/** Fires on every registry change; used by the UI to say where the catalogue is coming from. */
+const SOURCE_KEY = 'aoide:source'
+// Survives a reload within the session, so Settings knows the truth before it has fetched anything itself.
+let lastSource: 'mirror' | 'tidal' | null = (() => {
+  try {
+    const v = sessionStorage.getItem(SOURCE_KEY)
+    return v === 'mirror' || v === 'tidal' ? v : null
+  } catch {
+    return null
+  }
+})()
+/** Called after every successful catalogue or stream fetch with where it came from. */
+export function noteSource(src: 'mirror' | 'tidal') {
+  if (lastSource === src) return
+  lastSource = src
+  try {
+    sessionStorage.setItem(SOURCE_KEY, src)
+  } catch {
+    /* private mode */
+  }
+  listeners.forEach((l) => l(list))
+}
+/** True while the app is living off TIDAL directly: every mirror benched, or the last answer came from the fallback. */
 export function mirrorsDown(): boolean {
-  return allCooling()
+  return allCooling() || lastSource === 'tidal'
 }

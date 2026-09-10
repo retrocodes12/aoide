@@ -66,8 +66,8 @@ export const useUI = create<UIState>((set, get) => ({
     const root = document.documentElement.style
     root.setProperty('--tint', accent)
     root.setProperty('--tint-ink', ink)
-    root.setProperty('--tint-ink-soft', ink === '#151517' ? 'rgba(0, 0, 0, 0.62)' : 'rgba(255, 255, 255, 0.72)')
-    root.setProperty('--tint-ink-faint', ink === '#151517' ? 'rgba(0, 0, 0, 0.42)' : 'rgba(255, 255, 255, 0.45)')
+    root.setProperty('--tint-ink-soft', ink === '#151517' ? 'rgba(0, 0, 0, 0.5)' : 'rgba(255, 255, 255, 0.5)')
+    root.setProperty('--tint-ink-faint', ink === '#151517' ? 'rgba(0, 0, 0, 0.32)' : 'rgba(255, 255, 255, 0.32)')
     set({ tint: accent })
   },
   setTintFromImage: (url, fallback) => {

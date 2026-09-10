@@ -20,6 +20,7 @@ export function NowPlaying() {
   const { closeNowPlaying, openLyrics, openQueue, openMenu } = useUI.getState()
   const track = usePlayer((s) => s.queue[s.index] ?? null)
   const status = usePlayer((s) => s.status)
+  const error = usePlayer((s) => s.error)
   const position = usePlayer((s) => s.position)
   const duration = usePlayer((s) => s.duration)
   const stream = usePlayer((s) => s.stream)
@@ -97,13 +98,15 @@ export function NowPlaying() {
   }, [open, closeNowPlaying])
   if (!track) return <div className="overlay" aria-hidden />
   const playing = status === 'playing' || status === 'buffering' || status === 'loading'
-  const dur = duration || track.duration || 0
+  const failed = status === 'error'
+  // Only the media's own length drives the slider. Until it is known the transport waits rather than guessing.
+  const dur = duration || 0
   const pos = scrub ?? position
   const badge = streamBadge(track, stream)
   const go = (r: string) => { closeNowPlaying(); nav(r) }
   const lines = lyrics.data?.synced?.map((l) => l.line).filter(Boolean) ?? lyrics.data?.plain?.split('\n').filter(Boolean) ?? []
   return (
-    <section ref={sheet} className={`overlay${open ? ' is-open' : ''}`} aria-hidden={!open} aria-label="Now playing" data-testid="now_playing">
+    <section ref={sheet} className={`overlay${open ? ' is-open' : ''}`} aria-hidden={!open} inert={!open} aria-label="Now playing" data-testid="now_playing">
       <div className="np">
         <div className="np__bg" style={{ backgroundImage: `url(${artOf(track, 320)})` }} aria-hidden />
         <div className="np__scrim" aria-hidden />
@@ -127,9 +130,15 @@ export function NowPlaying() {
             </div>
             <Like track={track} />
           </div>
+          {failed && (
+            <div className="np__error" role="alert" data-testid="np_error">
+              <span>{error ?? "Couldn't play this song"}</span>
+              <button className="pill pill--soft" onClick={toggle} data-testid="np_retry">Try again</button>
+            </div>
+          )}
           <div className="np__seek">
             <input
-              className="seek" type="range" min={0} max={dur || 1} step={0.25} value={pos}
+              className="seek" type="range" min={0} max={dur || 1} step={0.25} value={dur ? pos : 0} disabled={!dur || failed}
               style={{ '--p': `${dur ? (pos / dur) * 100 : 0}%` } as React.CSSProperties}
               aria-label="Seek" data-testid="np_seek"
               onChange={(e) => setScrub(Number(e.target.value))}
@@ -137,11 +146,11 @@ export function NowPlaying() {
               onKeyUp={() => { if (scrub !== null) seek(scrub); setScrub(null) }}
             />
           </div>
-          <div className="np__times num"><span data-testid="np_position">{fmtTime(pos)}</span><span>-{fmtTime(Math.max(0, dur - pos))}</span></div>
+          <div className="np__times num"><span data-testid="np_position">{fmtTime(pos)}</span><span data-testid="np_remaining">{dur ? `-${fmtTime(Math.max(0, dur - pos))}` : '-:--'}</span></div>
           <div className="np__ctl">
             <button className={`iconbtn${shuffle ? ' is-on' : ' iconbtn--sub'}`} aria-pressed={shuffle} aria-label="Shuffle" data-testid="np_shuffle" onClick={toggleShuffle}><IShuffle size={26} /></button>
             <button className="iconbtn iconbtn--big" aria-label="Previous" data-testid="np_prev" onClick={prev}><IPrev /></button>
-            <button className="np__play" aria-label={playing ? 'Pause' : 'Play'} data-testid="np_toggle" onClick={toggle}>{playing ? <IPause /> : <IPlay />}</button>
+            <button className="np__play" aria-label={failed ? 'Retry' : playing ? 'Pause' : 'Play'} data-testid="np_toggle" onClick={toggle}>{playing ? <IPause /> : <IPlay />}</button>
             <button className="iconbtn iconbtn--big" aria-label="Next" data-testid="np_next" onClick={next}><INext /></button>
             <button className={`iconbtn${repeat !== 'off' ? ' is-on' : ' iconbtn--sub'}`} aria-pressed={repeat !== 'off'} aria-label={`Repeat ${repeat}`} data-testid="np_repeat" onClick={cycleRepeat}>{repeat === 'one' ? <IRepeatOne size={26} /> : <IRepeat size={26} />}</button>
           </div>
@@ -173,7 +182,9 @@ export function LyricsScreen() {
   const isPreview = usePlayer((s) => Boolean(s.stream?.isPreview))
   // On a 30-second preview the lyrics still cover the whole song; lines past the clip cannot be reached.
   const reachable = (t: number) => !isPreview || !duration || t < duration - 0.5
-  const synced = res.data?.synced
+  // lrclib sometimes answers with an empty synced list; treat that as no synced lyrics, not as a blank screen.
+  const synced = res.data?.synced?.length ? res.data.synced : null
+  const plain = res.data?.plain?.trim() ? res.data.plain : null
   const active = useMemo(() => {
     if (!synced?.length) return -1
     let i = -1
@@ -186,7 +197,7 @@ export function LyricsScreen() {
   }, [active, open])
   const playing = status === 'playing' || status === 'buffering' || status === 'loading'
   return (
-    <section className={`overlay overlay--above${open ? ' is-open' : ''}`} aria-hidden={!open} aria-label="Lyrics" data-testid="lyrics_screen">
+    <section className={`overlay overlay--above${open ? ' is-open' : ''}`} aria-hidden={!open} inert={!open} aria-label="Lyrics" data-testid="lyrics_screen">
       {track && (
         <div className="lyrics">
           <div className="topbar">
@@ -196,11 +207,11 @@ export function LyricsScreen() {
             </div>
             <button className="iconbtn" aria-label="Close lyrics" data-testid="lyrics_close" onClick={closeLyrics}><IClose /></button>
           </div>
-          {res.loading ? <div className="lyrics__empty">Looking for lyrics…</div> : !res.data || (!synced && !res.data.plain) ? <div className="lyrics__empty">We don't have lyrics for this one.</div> : (
+          {res.loading ? <div className="lyrics__empty">Looking for lyrics…</div> : !synced && !plain ? <div className="lyrics__empty">We don't have lyrics for this one.</div> : (
             <div className="lyrics__list" ref={ref}>
               {synced ? synced.map((l, i) => (
                 <button key={i} className={`lyrics__line${i === active ? ' is-active' : i < active ? ' is-past' : ''}${reachable(l.t) ? '' : ' is-beyond'}`} data-testid="lyric_line" disabled={!reachable(l.t)} aria-disabled={!reachable(l.t)} onClick={() => reachable(l.t) && seek(l.t)}>{l.line || '♪'}</button>
-              )) : res.data.plain!.split('\n').map((l, i) => <div key={i} className="lyrics__line lyrics__line--plain">{l || ' '}</div>)}
+              )) : plain!.split('\n').map((l, i) => <div key={i} className="lyrics__line lyrics__line--plain">{l || ' '}</div>)}
               {isPreview && synced && synced.some((l) => !reachable(l.t)) && <div className="lyrics__note">Only the first 30 seconds play on this mirror; the rest of the lyrics are shown for reading.</div>}
             </div>
           )}
@@ -244,7 +255,7 @@ export function QueueScreen() {
     window.addEventListener('pointerup', up)
   }
   return (
-    <section className={`overlay overlay--above${open ? ' is-open' : ''}`} aria-hidden={!open} aria-label="Queue" data-testid="queue_screen">
+    <section className={`overlay overlay--above${open ? ' is-open' : ''}`} aria-hidden={!open} inert={!open} aria-label="Queue" data-testid="queue_screen">
       <div className="queue">
         <div className="topbar">
           <button className="iconbtn" aria-label="Close queue" data-testid="queue_close" onClick={closeQueue}><IChevronDown size={28} /></button>

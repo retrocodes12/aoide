@@ -29,17 +29,18 @@ export function MiniPlayer() {
   const openNowPlaying = useUI((s) => s.openNowPlaying)
   if (!track) return null
   const playing = status === 'playing' || status === 'buffering' || status === 'loading'
-  const dur = duration || track.duration || 0
-  const sub = status === 'error' ? error ?? 'Playback failed' : status === 'loading' ? 'Loading…' : stream?.isPreview ? `${trackArtists(track)} · Preview` : trackArtists(track)
+  const failed = status === 'error'
+  const dur = duration || 0
+  const sub = failed ? error ?? "Couldn't play this song" : status === 'loading' ? 'Loading…' : stream?.isPreview ? `${trackArtists(track)} · Preview` : trackArtists(track)
   return (
     <div className="mini" data-testid="mini_player" role="button" tabIndex={0} onClick={openNowPlaying} onKeyDown={(e) => e.key === 'Enter' && openNowPlaying()}>
       <img className="mini__art" src={artOf(track, 160)} alt="" width={42} height={42} />
       <div className="mini__text">
         <div className="mini__title" data-testid="mini_title">{track.title}</div>
-        <div className={`mini__sub${stream?.isPreview ? ' is-preview' : ''}`}>{sub}</div>
+        <div className={`mini__sub${failed ? ' is-error' : stream?.isPreview ? ' is-preview' : ''}`} data-testid="mini_sub">{sub}</div>
       </div>
       <Like track={track} />
-      <button className="iconbtn" aria-label={playing ? 'Pause' : 'Play'} data-testid="mini_toggle" onClick={(e) => { e.stopPropagation(); toggle() }}>{playing ? <IPause size={26} /> : <IPlay size={26} />}</button>
+      <button className="iconbtn" aria-label={failed ? 'Retry' : playing ? 'Pause' : 'Play'} data-testid="mini_toggle" onClick={(e) => { e.stopPropagation(); toggle() }}>{playing ? <IPause size={26} /> : <IPlay size={26} />}</button>
       <button className="iconbtn" aria-label="Next" data-testid="mini_next" onClick={(e) => { e.stopPropagation(); next() }}><INext size={24} /></button>
       <div className="mini__bar" aria-hidden><i style={{ width: `${dur ? Math.min(100, (position / dur) * 100) : 0}%` }} /></div>
     </div>
@@ -48,8 +49,9 @@ export function MiniPlayer() {
 
 export function Toasts() {
   const toasts = useUI((s) => s.toasts)
+  const npOpen = useUI((s) => s.nowPlayingOpen)
   return (
-    <div className="toasts" aria-live="polite">
+    <div className={`toasts${npOpen ? ' is-np' : ''}`} aria-live="polite">
       {toasts.slice(-1).map((t) => <div key={t.id} className="toast" data-testid="toast">{t.text}</div>)}
     </div>
   )
@@ -72,7 +74,7 @@ export function TrackMenu() {
   return (
     <>
       <div className={`sheet-scrim${menu ? ' is-open' : ''}`} onClick={closeMenu} />
-      <div className={`sheet${menu ? ' is-open' : ''}`} data-testid="track_menu" aria-hidden={!menu} role="dialog">
+      <div className={`sheet${menu ? ' is-open' : ''}`} data-testid="track_menu" aria-hidden={!menu} inert={!menu} role="dialog">
         <div className="sheet__grab" />
         {t && (
           <>
@@ -128,7 +130,7 @@ export function ConfirmSheet() {
   return (
     <>
       <div className={`sheet-scrim${confirm ? ' is-open' : ''}`} onClick={closeConfirm} />
-      <div className={`sheet sheet--confirm${confirm ? ' is-open' : ''}`} role="alertdialog" aria-hidden={!confirm} data-testid="confirm_sheet">
+      <div className={`sheet sheet--confirm${confirm ? ' is-open' : ''}`} role="alertdialog" aria-hidden={!confirm} inert={!confirm} data-testid="confirm_sheet">
         <div className="sheet__grab" />
         {confirm && (
           <div className="confirm">

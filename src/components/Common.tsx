@@ -90,10 +90,12 @@ export function Empty({ title, body, action }: { title: string; body?: string; a
   )
 }
 
-export function ErrorState({ error, retry }: { error: Error; retry?: () => void }) {
+export function ErrorState({ error, retry, what = 'page' }: { error: Error; retry?: () => void; what?: string }) {
   const offline = typeof navigator !== 'undefined' && !navigator.onLine
+  const missing = (error as { status?: number }).status === 404
+  if (missing) return <Empty title={`We couldn't find that ${what}`} body="It may have been removed from the catalogue, or the link is wrong." action={<Link to="/" className="pill pill--white">Home</Link>} />
   return (
-    <Empty title={offline ? "You're offline" : 'Something went wrong'} body={offline ? 'Aoide needs a connection to reach the catalogue mirrors.' : `Every mirror failed for this request. ${error.message}`} action={retry && <button className="pill pill--white" onClick={retry}>Try again</button>} />
+    <Empty title={offline ? "You're offline" : 'Something went wrong'} body={offline ? 'Aoide needs a connection to reach the catalogue mirrors.' : 'The catalogue mirrors did not answer. Give it a moment and try again.'} action={retry && <button className="pill pill--white" onClick={retry}>Try again</button>} />
   )
 }
 

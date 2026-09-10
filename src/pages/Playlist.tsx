@@ -28,7 +28,7 @@ export function PlaylistPage() {
   const p = res.data?.playlist
   useDocumentTitle(p?.title ?? 'Playlist')
   useEffect(() => { if (p) setTintFromImage(playlistImage(p, 160) ?? '', res.data?.tracks[0]?.album?.vibrantColor ?? '#5a5a5a') }, [p, res.data, setTintFromImage])
-  if (res.error) return <div className="page"><div className="topbar"><Link to="/" className="iconbtn" aria-label="Home">‹</Link></div><ErrorState error={res.error} retry={res.reload} /></div>
+  if (res.error) return <div className="page"><div className="topbar"><Link to="/" className="iconbtn" aria-label="Home">‹</Link></div><ErrorState error={res.error} retry={res.reload} what="playlist" /></div>
   const tracks = res.data?.tracks ?? []
   const total = tracks.reduce((a, t) => a + t.duration, 0)
   const ctx = { kind: 'playlist', title: p?.title ?? '', href: `/playlist/${id}` }
