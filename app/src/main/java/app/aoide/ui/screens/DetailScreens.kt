@@ -125,14 +125,9 @@ fun AlbumScreen(id: Long, onBack: () -> Unit, onNavigate: (String) -> Unit) {
             DetailHeader(
                 tint = tint, image = Catalog.cover(album?.cover, 640), title = album?.title ?: "",
                 artist = album?.primaryArtist?.let { a ->
-                    {
-                        Row(Modifier.clickable { onNavigate("artist/${a.id}") }, verticalAlignment = Alignment.CenterVertically) {
-                            Artwork(Catalog.artistPicture(a.picture ?: album.primaryArtist?.picture, 160), Modifier.size(24.dp), CircleShape)
-                            Spacer(Modifier.width(8.dp))
-                            Text(a.name, style = MaterialTheme.typography.titleSmall, color = Aoide.fg)
-                        }
-                    }
+                    { Text(a.name, style = MaterialTheme.typography.titleMedium, color = Aoide.accent, modifier = Modifier.clickable { onNavigate("artist/${a.id}") }) }
                 },
+                badge = album?.let { a -> if (a.audioQuality == "HI_RES_LOSSLESS") "Hi-Res Lossless" else if (a.audioQuality == "LOSSLESS") "Lossless" else null },
                 meta = album?.let { a -> listOfNotNull(a.type?.let { if (it == "ALBUM") "Album" else it.lowercase().replaceFirstChar(Char::uppercase) } ?: "Album", a.year.ifBlank { null }, "${tracks.size} songs", tracks.sumOf { it.duration }.takeIf { it > 0 }?.let(::formatLength)).joinToString(" · ") } ?: "Album",
                 onBack = onBack,
                 leftActions = {
@@ -149,7 +144,7 @@ fun AlbumScreen(id: Long, onBack: () -> Unit, onNavigate: (String) -> Unit) {
             )
         }
         if (r is Resource.Loading) item { SkeletonRows(8) }
-        items(tracks, key = { it.id }) { t -> TrackRow(t, showArt = false, onClick = { PlayerController.playTracks(tracks, tracks.indexOf(t), ctx) }) }
+        items(tracks.withIndex().toList(), key = { it.value.id }) { (i, t) -> TrackRow(t, showArt = false, number = i + 1, onClick = { PlayerController.playTracks(tracks, i, ctx) }) }
         if (album != null) {
             item {
                 Column(Modifier.padding(16.dp)) {

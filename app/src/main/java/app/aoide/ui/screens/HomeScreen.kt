@@ -120,13 +120,31 @@ fun HomeScreen(onNavigate: (String) -> Unit) {
             }
         }
 
-        item { SectionTitle("New releases") }
+        item { SectionTitle("New releases", onSeeAll = { onNavigate("playlist/$NEW_ARRIVALS") }) }
         item {
             when (val r = arrivals) {
                 is Resource.Loading -> SkeletonCards()
                 is Resource.Failed -> ErrorState(r.error) { r.reload() }
-                is Resource.Ready -> CardRow(albumsFromTracks(r.value.second).take(12), { it.id }) { a ->
-                    MediaCard(Catalog.cover(a.cover, 320), a.title, a.primaryArtist?.name) { onNavigate("album/${a.id}") }
+                is Resource.Ready -> {
+                    val albums = albumsFromTracks(r.value.second)
+                    Column {
+                        albums.firstOrNull()?.let { lead ->
+                            // Apple-style hero: one big card for the newest record
+                            Box(Modifier.padding(horizontal = 16.dp).fillMaxWidth().clip(RoundedCornerShape(14.dp)).background(Aoide.elevated).clickable { onNavigate("album/${lead.id}") }.testTag("hero_card")) {
+                                app.aoide.ui.components.Artwork(Catalog.cover(lead.cover, 640), Modifier.fillMaxWidth().height(200.dp), RoundedCornerShape(0.dp))
+                                Box(Modifier.fillMaxWidth().height(200.dp).background(androidx.compose.ui.graphics.Brush.verticalGradient(listOf(androidx.compose.ui.graphics.Color.Transparent, androidx.compose.ui.graphics.Color.Black.copy(alpha = .75f)))))
+                                Column(Modifier.align(Alignment.BottomStart).padding(16.dp)) {
+                                    Text("JUST ADDED", style = MaterialTheme.typography.labelSmall, color = Aoide.accent)
+                                    Text(lead.title, style = MaterialTheme.typography.headlineSmall, color = Aoide.fg, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                    Text(lead.primaryArtist?.name ?: "", style = MaterialTheme.typography.bodyMedium, color = Aoide.fg.copy(alpha = .8f), maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                }
+                            }
+                            Spacer(Modifier.height(16.dp))
+                        }
+                        CardRow(albums.drop(1).take(12), { it.id }) { a ->
+                            MediaCard(Catalog.cover(a.cover, 320), a.title, a.primaryArtist?.name) { onNavigate("album/${a.id}") }
+                        }
+                    }
                 }
             }
         }
@@ -142,7 +160,7 @@ fun HomeScreen(onNavigate: (String) -> Unit) {
         }
 
         if (lib.recentTracks.isNotEmpty()) {
-            item { SectionTitle("Recently played") }
+            item { SectionTitle("Recently played", onSeeAll = { onNavigate("library") }) }
             item {
                 CardRow(lib.recentTracks.take(12), { it.id }) { t ->
                     MediaCard(Catalog.cover(t.album?.cover, 320), t.title, t.artistNames, tag = "recent_card") {

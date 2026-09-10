@@ -56,7 +56,13 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.blur
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.scale
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.spring
+import androidx.compose.material.icons.filled.Lyrics
+import app.aoide.ui.components.QualityBadge
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
@@ -83,7 +89,11 @@ import app.aoide.ui.components.LikeButton
 import app.aoide.ui.rememberResource
 import app.aoide.ui.theme.Aoide
 
-/** Full-screen player. Swipe down or back closes it. */
+/**
+ * Full-screen player. Apple Music's stage: the artwork blurred and darkened behind everything,
+ * the cover large with a deep shadow and shrinking on pause, a lossless badge under the title.
+ * Spotify's furniture: the white play disc, orange for shuffle/repeat, the lyrics card below.
+ */
 @Composable
 fun NowPlayingScreen(tint: Color, onNavigate: (String) -> Unit) {
     val s by PlayerController.state.collectAsState()
@@ -93,77 +103,88 @@ fun NowPlayingScreen(tint: Color, onNavigate: (String) -> Unit) {
     BackHandler { AppUi.nowPlayingOpen = false }
     var drag by remember { mutableStateOf(0f) }
     val lyrics by rememberResource("lyrics", t.id) { Catalog.lyrics(t) }
-    Column(
-        Modifier.fillMaxSize().background(Brush.verticalGradient(listOf(tint, Aoide.ground), endY = 1400f))
-            .pointerInput(Unit) { detectVerticalDragGestures(onDragEnd = { if (drag > 120f) AppUi.nowPlayingOpen = false; drag = 0f }) { _, dy -> drag += dy } }
-            .statusBarsPadding().navigationBarsPadding().verticalScroll(rememberScrollState()).testTag("now_playing"),
-    ) {
-        Row(Modifier.fillMaxWidth().padding(horizontal = 4.dp), verticalAlignment = Alignment.CenterVertically) {
-            IconButton(onClick = { AppUi.nowPlayingOpen = false }, modifier = Modifier.semantics { contentDescription = "Close now playing" }.testTag("np_close")) { Icon(Icons.Filled.KeyboardArrowDown, null, tint = Aoide.fg, modifier = Modifier.size(28.dp)) }
-            Column(Modifier.weight(1f), horizontalAlignment = Alignment.CenterHorizontally) {
-                Text((if (info?.isPreview == true) "PREVIEW · 30 SECONDS" else "PLAYING FROM ${s.context?.kind?.uppercase() ?: "QUEUE"}"), style = MaterialTheme.typography.labelSmall, color = if (info?.isPreview == true) Aoide.accent else Aoide.fg.copy(alpha = .8f))
-                Text(s.context?.title ?: t.album?.title ?: "", style = MaterialTheme.typography.titleSmall, color = Aoide.fg, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.clickable { s.context?.href?.takeIf { it.isNotEmpty() }?.let { AppUi.nowPlayingOpen = false; onNavigate(it) } })
-            }
-            IconButton(onClick = { AppUi.openMenu(t) }, modifier = Modifier.semantics { contentDescription = "More options" }) { Icon(Icons.Filled.MoreVert, null, tint = Aoide.fg) }
-        }
-        Spacer(Modifier.height(24.dp))
-        Box(Modifier.padding(horizontal = 28.dp).fillMaxWidth().aspectRatio(1f).shadow(28.dp, RoundedCornerShape(8.dp), clip = false)) {
-            Artwork(Catalog.cover(t.album?.cover, 640), Modifier.fillMaxSize(), RoundedCornerShape(8.dp), contentDescription = t.album?.title)
-        }
-        Spacer(Modifier.height(28.dp))
-        Row(Modifier.padding(horizontal = 24.dp).fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-            Column(Modifier.weight(1f)) {
-                Text(t.title, style = MaterialTheme.typography.headlineSmall.copy(fontSize = 22.sp), color = Aoide.fg, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.testTag("np_title"))
-                Text(t.artistNames, style = MaterialTheme.typography.bodyLarge, color = Aoide.subdued, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.clickable { t.primaryArtist?.let { AppUi.nowPlayingOpen = false; onNavigate("artist/${it.id}") } })
-            }
-            LikeButton(t, size = 28.dp)
-        }
-        Spacer(Modifier.height(4.dp))
-        var scrub by remember(t.id) { mutableStateOf<Float?>(null) }
-        val dur = s.durationMs.coerceAtLeast(1L)
-        val pos = scrub ?: (s.positionMs.toFloat() / dur).coerceIn(0f, 1f)
-        Slider(
-            value = pos, onValueChange = { scrub = it }, onValueChangeFinished = { scrub?.let { PlayerController.seekTo((it * dur).toLong()) }; scrub = null },
-            colors = SliderDefaults.colors(thumbColor = Aoide.fg, activeTrackColor = Aoide.fg, inactiveTrackColor = Color.White.copy(alpha = .3f)),
-            modifier = Modifier.padding(horizontal = 16.dp).semantics { contentDescription = "Seek" }.testTag("np_seek"),
-        )
-        Row(Modifier.padding(horizontal = 24.dp).fillMaxWidth()) {
-            Text(formatTime(((pos * dur) / 1000).toInt()), style = MaterialTheme.typography.bodySmall, color = Aoide.subdued, modifier = Modifier.testTag("np_position"))
-            Spacer(Modifier.weight(1f))
-            Text(formatTime((dur / 1000).toInt()), style = MaterialTheme.typography.bodySmall, color = Aoide.subdued)
-        }
-        Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween) {
-            IconButton(onClick = { PlayerController.toggleShuffle() }, modifier = Modifier.semantics { contentDescription = "Shuffle" }.testTag("np_shuffle")) { Icon(Icons.Filled.Shuffle, null, tint = if (s.shuffle) Aoide.accent else Aoide.subdued, modifier = Modifier.size(26.dp)) }
-            IconButton(onClick = { PlayerController.prev() }, modifier = Modifier.semantics { contentDescription = "Previous" }.testTag("np_prev")) { Icon(Icons.Filled.SkipPrevious, null, tint = Aoide.fg, modifier = Modifier.size(40.dp)) }
-            Box(Modifier.size(68.dp).clip(CircleShape).background(Aoide.fg).clickable { PlayerController.toggle() }.semantics { contentDescription = if (s.isPlaying) "Pause" else "Play" }.testTag("np_toggle"), contentAlignment = Alignment.Center) {
-                Icon(if (s.isPlaying) Icons.Filled.Pause else Icons.Filled.PlayArrow, null, tint = Aoide.base, modifier = Modifier.size(36.dp))
-            }
-            IconButton(onClick = { PlayerController.next() }, modifier = Modifier.semantics { contentDescription = "Next" }.testTag("np_next")) { Icon(Icons.Filled.SkipNext, null, tint = Aoide.fg, modifier = Modifier.size(40.dp)) }
-            IconButton(onClick = { PlayerController.cycleRepeat() }, modifier = Modifier.semantics { contentDescription = "Repeat" }.testTag("np_repeat")) {
-                Icon(if (s.repeat == Player.REPEAT_MODE_ONE) Icons.Filled.RepeatOne else Icons.Filled.Repeat, null, tint = if (s.repeat != Player.REPEAT_MODE_OFF) Aoide.accent else Aoide.subdued, modifier = Modifier.size(26.dp))
-            }
-        }
-        Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp), verticalAlignment = Alignment.CenterVertically) {
-            Text(info?.label?.takeIf { it.isNotBlank() }?.let { if (info.isPreview) "Preview. Add a subscribed mirror in Settings for full songs." else it } ?: "", style = MaterialTheme.typography.bodySmall, color = if (info?.isPreview == true) Aoide.accent else Aoide.subdued, modifier = Modifier.weight(1f))
-            IconButton(onClick = { AppUi.queueOpen = true }, modifier = Modifier.semantics { contentDescription = "Queue" }.testTag("np_queue")) { Icon(Icons.Filled.QueueMusic, null, tint = Aoide.fg) }
-        }
-        // Lyrics card, as Spotify shows under the controls
+    val artScale by animateFloatAsState(if (s.isPlaying) 1f else 0.8f, spring(dampingRatio = 0.68f, stiffness = 260f), label = "art")
+    val art = Catalog.cover(t.album?.cover, 640)
+    Box(Modifier.fillMaxSize().background(tint).testTag("now_playing")) {
+        // Blurred artwork backdrop (a no-op below API 31, where the tint alone carries it)
+        Artwork(art, Modifier.fillMaxSize().blur(70.dp), RoundedCornerShape(0.dp))
+        Box(Modifier.fillMaxSize().background(Brush.verticalGradient(listOf(Color.Black.copy(alpha = .28f), Color.Black.copy(alpha = .62f), Aoide.ground.copy(alpha = .96f)))))
         Column(
-            Modifier.padding(16.dp).fillMaxWidth().clip(RoundedCornerShape(8.dp)).background(tint).clickable { AppUi.lyricsOpen = true }.padding(16.dp).testTag("lyrics_card"),
+            Modifier.fillMaxSize()
+                .pointerInput(Unit) { detectVerticalDragGestures(onDragEnd = { if (drag > 120f) AppUi.nowPlayingOpen = false; drag = 0f }) { _, dy -> drag += dy } }
+                .statusBarsPadding().navigationBarsPadding().verticalScroll(rememberScrollState()),
         ) {
-            Text("Lyrics", style = MaterialTheme.typography.titleSmall, color = Aoide.fg)
-            Spacer(Modifier.height(8.dp))
-            when (val l = lyrics) {
-                is Resource.Ready -> {
-                    val lines = l.value?.synced?.map { it.line }?.filter { it.isNotBlank() } ?: l.value?.plain?.lines()?.filter { it.isNotBlank() } ?: emptyList()
-                    if (lines.isEmpty()) Text("We don't have lyrics for this one.", style = MaterialTheme.typography.bodyMedium, color = Aoide.fg.copy(alpha = .8f))
-                    else lines.take(4).forEach { Text(it, style = MaterialTheme.typography.titleLarge, color = Aoide.fg, maxLines = 1, overflow = TextOverflow.Ellipsis) }
+            Row(Modifier.fillMaxWidth().padding(horizontal = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+                IconButton(onClick = { AppUi.nowPlayingOpen = false }, modifier = Modifier.semantics { contentDescription = "Close now playing" }.testTag("np_close")) { Icon(Icons.Filled.KeyboardArrowDown, null, tint = Aoide.fg, modifier = Modifier.size(28.dp)) }
+                Column(Modifier.weight(1f), horizontalAlignment = Alignment.CenterHorizontally) {
+                    Text((if (info?.isPreview == true) "PREVIEW · 30 SECONDS" else "PLAYING FROM ${s.context?.kind?.uppercase() ?: "QUEUE"}"), style = MaterialTheme.typography.labelSmall, color = if (info?.isPreview == true) Aoide.accent else Aoide.fg.copy(alpha = .75f))
+                    Text(s.context?.title ?: t.album?.title ?: "", style = MaterialTheme.typography.titleSmall, color = Aoide.fg, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.clickable { s.context?.href?.takeIf { it.isNotEmpty() }?.let { AppUi.nowPlayingOpen = false; onNavigate(it) } })
                 }
-                is Resource.Loading -> Text("Looking for lyrics…", style = MaterialTheme.typography.bodyMedium, color = Aoide.fg.copy(alpha = .8f))
-                is Resource.Failed -> Text("Lyrics unavailable", style = MaterialTheme.typography.bodyMedium, color = Aoide.fg.copy(alpha = .8f))
+                IconButton(onClick = { AppUi.openMenu(t) }, modifier = Modifier.semantics { contentDescription = "More options" }) { Icon(Icons.Filled.MoreVert, null, tint = Aoide.fg) }
             }
+            Spacer(Modifier.height(28.dp))
+            Box(Modifier.padding(horizontal = 26.dp).fillMaxWidth().aspectRatio(1f), contentAlignment = Alignment.Center) {
+                Artwork(art, Modifier.fillMaxSize().scale(artScale).shadow(40.dp, RoundedCornerShape(12.dp), clip = false, ambientColor = Color.Black, spotColor = Color.Black), RoundedCornerShape(12.dp), contentDescription = t.album?.title)
+            }
+            Spacer(Modifier.height(30.dp))
+            Row(Modifier.padding(horizontal = 26.dp).fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                Column(Modifier.weight(1f)) {
+                    Text(t.title, style = MaterialTheme.typography.headlineSmall.copy(fontSize = 22.sp), color = Aoide.fg, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.testTag("np_title"))
+                    Text(t.artistNames, style = MaterialTheme.typography.bodyLarge, color = Aoide.fg.copy(alpha = .7f), maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.clickable { t.primaryArtist?.let { AppUi.nowPlayingOpen = false; onNavigate("artist/${it.id}") } })
+                    info?.label?.takeIf { it.isNotBlank() }?.let { label ->
+                        Box(Modifier.padding(top = 6.dp)) { QualityBadge(if (info.isPreview) "Preview" else if (label.startsWith("FLAC 24")) "Hi-Res Lossless" else if (label.startsWith("FLAC")) "Lossless" else label) }
+                    }
+                }
+                LikeButton(t, size = 28.dp)
+            }
+            Spacer(Modifier.height(6.dp))
+            var scrub by remember(t.id) { mutableStateOf<Float?>(null) }
+            val dur = s.durationMs.coerceAtLeast(1L)
+            val pos = scrub ?: (s.positionMs.toFloat() / dur).coerceIn(0f, 1f)
+            Slider(
+                value = pos, onValueChange = { scrub = it }, onValueChangeFinished = { scrub?.let { PlayerController.seekTo((it * dur).toLong()) }; scrub = null },
+                colors = SliderDefaults.colors(thumbColor = Aoide.fg, activeTrackColor = Aoide.fg.copy(alpha = .9f), inactiveTrackColor = Color.White.copy(alpha = .25f)),
+                modifier = Modifier.padding(horizontal = 16.dp).semantics { contentDescription = "Seek" }.testTag("np_seek"),
+            )
+            Row(Modifier.padding(horizontal = 26.dp).fillMaxWidth()) {
+                Text(formatTime(((pos * dur) / 1000).toInt()), style = MaterialTheme.typography.bodySmall, color = Aoide.fg.copy(alpha = .6f), modifier = Modifier.testTag("np_position"))
+                Spacer(Modifier.weight(1f))
+                Text("-" + formatTime((((1 - pos) * dur) / 1000).toInt()), style = MaterialTheme.typography.bodySmall, color = Aoide.fg.copy(alpha = .6f))
+            }
+            Row(Modifier.fillMaxWidth().padding(horizontal = 18.dp, vertical = 10.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween) {
+                IconButton(onClick = { PlayerController.toggleShuffle() }, modifier = Modifier.semantics { contentDescription = "Shuffle" }.testTag("np_shuffle")) { Icon(Icons.Filled.Shuffle, null, tint = if (s.shuffle) Aoide.accent else Aoide.fg.copy(alpha = .7f), modifier = Modifier.size(26.dp)) }
+                IconButton(onClick = { PlayerController.prev() }, modifier = Modifier.semantics { contentDescription = "Previous" }.testTag("np_prev")) { Icon(Icons.Filled.SkipPrevious, null, tint = Aoide.fg, modifier = Modifier.size(42.dp)) }
+                Box(Modifier.size(72.dp).clip(CircleShape).background(Aoide.fg).clickable { PlayerController.toggle() }.semantics { contentDescription = if (s.isPlaying) "Pause" else "Play" }.testTag("np_toggle"), contentAlignment = Alignment.Center) {
+                    Icon(if (s.isPlaying) Icons.Filled.Pause else Icons.Filled.PlayArrow, null, tint = Aoide.base, modifier = Modifier.size(38.dp))
+                }
+                IconButton(onClick = { PlayerController.next() }, modifier = Modifier.semantics { contentDescription = "Next" }.testTag("np_next")) { Icon(Icons.Filled.SkipNext, null, tint = Aoide.fg, modifier = Modifier.size(42.dp)) }
+                IconButton(onClick = { PlayerController.cycleRepeat() }, modifier = Modifier.semantics { contentDescription = "Repeat" }.testTag("np_repeat")) {
+                    Icon(if (s.repeat == Player.REPEAT_MODE_ONE) Icons.Filled.RepeatOne else Icons.Filled.Repeat, null, tint = if (s.repeat != Player.REPEAT_MODE_OFF) Aoide.accent else Aoide.fg.copy(alpha = .7f), modifier = Modifier.size(26.dp))
+                }
+            }
+            Row(Modifier.fillMaxWidth().padding(horizontal = 22.dp, vertical = 4.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween) {
+                IconButton(onClick = { AppUi.lyricsOpen = true }, modifier = Modifier.semantics { contentDescription = "Lyrics" }.testTag("np_lyrics")) { Icon(Icons.Filled.Lyrics, null, tint = Aoide.fg.copy(alpha = .8f)) }
+                Text(if (info?.isPreview == true) "Preview. Add a subscribed mirror in Settings for full songs." else "", style = MaterialTheme.typography.bodySmall, color = Aoide.accent, modifier = Modifier.weight(1f), textAlign = androidx.compose.ui.text.style.TextAlign.Center)
+                IconButton(onClick = { AppUi.queueOpen = true }, modifier = Modifier.semantics { contentDescription = "Queue" }.testTag("np_queue")) { Icon(Icons.Filled.QueueMusic, null, tint = Aoide.fg.copy(alpha = .8f)) }
+            }
+            // Lyrics card, as Spotify shows under the controls
+            Column(
+                Modifier.padding(horizontal = 16.dp, vertical = 12.dp).fillMaxWidth().clip(RoundedCornerShape(12.dp)).background(tint).background(Color.White.copy(alpha = .06f)).clickable { AppUi.lyricsOpen = true }.padding(18.dp).testTag("lyrics_card"),
+            ) {
+                Text("Lyrics", style = MaterialTheme.typography.titleSmall, color = Aoide.fg)
+                Spacer(Modifier.height(10.dp))
+                when (val l = lyrics) {
+                    is Resource.Ready -> {
+                        val lines = l.value?.synced?.map { it.line }?.filter { it.isNotBlank() } ?: l.value?.plain?.lines()?.filter { it.isNotBlank() } ?: emptyList()
+                        if (lines.isEmpty()) Text("We don't have lyrics for this one.", style = MaterialTheme.typography.bodyMedium, color = Aoide.fg.copy(alpha = .8f))
+                        else lines.take(4).forEach { Text(it, style = MaterialTheme.typography.titleLarge, color = Aoide.fg, maxLines = 1, overflow = TextOverflow.Ellipsis) }
+                    }
+                    is Resource.Loading -> Text("Looking for lyrics…", style = MaterialTheme.typography.bodyMedium, color = Aoide.fg.copy(alpha = .8f))
+                    is Resource.Failed -> Text("Lyrics unavailable", style = MaterialTheme.typography.bodyMedium, color = Aoide.fg.copy(alpha = .8f))
+                }
+            }
+            Spacer(Modifier.height(24.dp))
         }
-        Spacer(Modifier.height(32.dp))
     }
 }
 

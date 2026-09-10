@@ -35,6 +35,8 @@ import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.shadow
+import androidx.compose.material.icons.filled.ChevronRight
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Shape
@@ -76,21 +78,25 @@ fun LikedTile(size: Dp, shape: Shape = RoundedCornerShape(4.dp)) {
 }
 
 @Composable
-fun SectionTitle(text: String, modifier: Modifier = Modifier, action: (@Composable () -> Unit)? = null) {
-    Row(modifier.fillMaxWidth().padding(horizontal = 16.dp).padding(top = 24.dp, bottom = 12.dp), verticalAlignment = Alignment.CenterVertically) {
-        Text(text, style = MaterialTheme.typography.headlineSmall, modifier = Modifier.weight(1f), maxLines = 1, overflow = TextOverflow.Ellipsis)
+fun SectionTitle(text: String, modifier: Modifier = Modifier, onSeeAll: (() -> Unit)? = null, action: (@Composable () -> Unit)? = null) {
+    Row(modifier.fillMaxWidth().padding(horizontal = 16.dp).padding(top = 26.dp, bottom = 12.dp), verticalAlignment = Alignment.CenterVertically) {
+        Row(Modifier.weight(1f).let { m -> if (onSeeAll != null) m.clickable(onClick = onSeeAll) else m }, verticalAlignment = Alignment.CenterVertically) {
+            Text(text, style = MaterialTheme.typography.headlineSmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            if (onSeeAll != null) Icon(androidx.compose.material.icons.Icons.Filled.ChevronRight, null, tint = Aoide.subdued, modifier = Modifier.padding(start = 2.dp, top = 2.dp).size(22.dp))
+        }
         action?.invoke()
     }
 }
 
 /** A square card in a horizontal row: art, title, subtitle. */
 @Composable
-fun MediaCard(image: String?, title: String, subtitle: String?, round: Boolean = false, width: Dp = 148.dp, tag: String = "card", onClick: () -> Unit) {
+fun MediaCard(image: String?, title: String, subtitle: String?, round: Boolean = false, width: Dp = 156.dp, tag: String = "card", onClick: () -> Unit) {
+    val shape = if (round) CircleShape else RoundedCornerShape(10.dp)
     Column(Modifier.width(width).clickable(onClick = onClick).testTag(tag)) {
-        Artwork(image, Modifier.size(width).semantics { contentDescription = title }, shape = if (round) CircleShape else RoundedCornerShape(4.dp))
-        Spacer(Modifier.height(8.dp))
-        Text(title, style = MaterialTheme.typography.titleSmall, maxLines = 1, overflow = TextOverflow.Ellipsis, color = Aoide.fg)
-        if (!subtitle.isNullOrBlank()) Text(subtitle, style = MaterialTheme.typography.bodySmall, color = Aoide.subdued, maxLines = 2, overflow = TextOverflow.Ellipsis)
+        Artwork(image, Modifier.size(width).shadow(10.dp, shape, clip = false, ambientColor = Color.Black, spotColor = Color.Black).semantics { contentDescription = title }, shape = shape)
+        Spacer(Modifier.height(10.dp))
+        Text(title, style = MaterialTheme.typography.titleSmall.copy(fontWeight = androidx.compose.ui.text.font.FontWeight.SemiBold), maxLines = 1, overflow = TextOverflow.Ellipsis, color = Aoide.fg)
+        if (!subtitle.isNullOrBlank()) Text(subtitle, style = MaterialTheme.typography.bodySmall, color = Aoide.subdued, maxLines = 1, overflow = TextOverflow.Ellipsis)
     }
 }
 

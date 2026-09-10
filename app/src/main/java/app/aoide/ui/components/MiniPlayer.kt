@@ -15,6 +15,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.filled.SkipNext
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -25,6 +26,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.contentDescription
@@ -38,7 +40,7 @@ import app.aoide.player.StreamResolver
 import app.aoide.ui.AppUi
 import app.aoide.ui.theme.Aoide
 
-/** The floating bar above the tab bar. Tinted like the record, hairline progress along the bottom. */
+/** Floating capsule above the tab bar: Apple's shape, tinted like the record, Spotify's hairline progress. */
 @Composable
 fun MiniPlayer(tint: Color) {
     val s by PlayerController.state.collectAsState()
@@ -47,12 +49,13 @@ fun MiniPlayer(tint: Color) {
     val info = infos[t.id]
     val progress = if (s.durationMs > 0) (s.positionMs.toFloat() / s.durationMs).coerceIn(0f, 1f) else 0f
     Column(
-        Modifier.padding(horizontal = 8.dp).fillMaxWidth().clip(RoundedCornerShape(6.dp)).background(tint.copy(alpha = 1f)).background(Color.Black.copy(alpha = .45f))
+        Modifier.padding(horizontal = 10.dp).fillMaxWidth().shadow(18.dp, RoundedCornerShape(12.dp), clip = false, ambientColor = Color.Black, spotColor = Color.Black)
+            .clip(RoundedCornerShape(12.dp)).background(tint).background(Color.Black.copy(alpha = .5f))
             .clickable { AppUi.nowPlayingOpen = true }.testTag("mini_player"),
     ) {
-        Row(Modifier.padding(start = 8.dp, top = 8.dp, bottom = 8.dp, end = 4.dp), verticalAlignment = Alignment.CenterVertically) {
-            Artwork(Catalog.cover(t.album?.cover, 160), Modifier.size(40.dp))
-            Spacer(Modifier.width(10.dp))
+        Row(Modifier.padding(start = 8.dp, top = 8.dp, bottom = 8.dp, end = 2.dp), verticalAlignment = Alignment.CenterVertically) {
+            Artwork(Catalog.cover(t.album?.cover, 160), Modifier.size(42.dp).shadow(6.dp, RoundedCornerShape(6.dp), clip = false), RoundedCornerShape(6.dp))
+            Spacer(Modifier.width(12.dp))
             Column(Modifier.weight(1f)) {
                 Text(t.title, style = MaterialTheme.typography.titleSmall, color = Aoide.fg, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.testTag("mini_title"))
                 Text(
@@ -62,17 +65,19 @@ fun MiniPlayer(tint: Color) {
                         info?.isPreview == true -> "${t.artistNames} · Preview"
                         else -> t.artistNames
                     },
-                    style = MaterialTheme.typography.bodySmall, color = if (info?.isPreview == true) Aoide.accent else Aoide.subdued, maxLines = 1, overflow = TextOverflow.Ellipsis,
+                    style = MaterialTheme.typography.bodySmall, color = if (info?.isPreview == true) Aoide.accent else Aoide.fg.copy(alpha = .75f), maxLines = 1, overflow = TextOverflow.Ellipsis,
                 )
             }
-            LikeButton(t, size = 22.dp)
             IconButton(onClick = { PlayerController.toggle() }, modifier = Modifier.semantics { contentDescription = if (s.isPlaying) "Pause" else "Play" }.testTag("mini_toggle")) {
                 Icon(if (s.isPlaying) Icons.Filled.Pause else Icons.Filled.PlayArrow, null, tint = Aoide.fg, modifier = Modifier.size(28.dp))
             }
+            IconButton(onClick = { PlayerController.next() }, modifier = Modifier.semantics { contentDescription = "Next" }.testTag("mini_next")) {
+                Icon(Icons.Filled.SkipNext, null, tint = Aoide.fg, modifier = Modifier.size(26.dp))
+            }
         }
-        Box(Modifier.fillMaxWidth().padding(horizontal = 8.dp).height(2.dp).background(Color.White.copy(alpha = .25f))) {
+        Box(Modifier.fillMaxWidth().padding(horizontal = 10.dp).height(2.dp).background(Color.White.copy(alpha = .22f))) {
             Box(Modifier.fillMaxWidth(progress).height(2.dp).background(Aoide.fg))
         }
-        Spacer(Modifier.height(4.dp))
+        Spacer(Modifier.height(6.dp))
     }
 }
