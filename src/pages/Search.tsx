@@ -106,7 +106,7 @@ function Results({ term, tab, setTab }: { term: string; tab: Tab; setTab: (t: Ta
           )}
         </Section>
       )}
-      {(tab === 'all' || tab === 'tracks') && !all.error && (
+      {(tab === 'all' || tab === 'tracks') && !all.error && !nothing && (
         <Section title="Songs">
           {songs.loading || (emptyAnswer && !retried) ? <SkeletonRows n={4} /> : (songs.data ?? []).map((t, i) => <TrackRow key={t.id} track={t} onPlay={() => playTracks(songs.data!, i, ctx)} sub={`${t.artists?.map((a) => a.name).join(', ') ?? t.artist?.name ?? ''}${t.album ? ` · ${t.album.title}` : ''}`} />)}
           {settled && !songs.data?.length && !emptyAnswer && <Empty title={`No songs for “${term}”`} />}

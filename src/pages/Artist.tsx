@@ -46,7 +46,7 @@ export function ArtistPage() {
   return (
     <div className="page" data-testid="artist_screen">
       <div className={`banner${a && !a.picture ? ' banner--blank' : ''}`}>
-        {a?.picture ? <img src={artistPicture(a.picture, 750)} alt="" fetchPriority="high" /> : <div className="banner__blank" aria-hidden><span>{(a?.name ?? '?').slice(0, 1).toUpperCase()}</span></div>}
+        {a?.picture ? <img src={artistPicture(a.picture, 750)} alt="" fetchPriority="high" /> : <div className="banner__blank" aria-hidden><span>{(a?.name ?? '').slice(0, 1).toUpperCase()}</span></div>}
         <div className="banner__scrim" />
         <div className="topbar"><button className="iconbtn" aria-label="Back" data-testid="back" onClick={() => (window.history.length > 1 ? nav(-1) : nav('/'))}><IChevronLeft /></button></div>
         <h1 className="banner__name" data-testid="detail_title">{a?.name ?? ''}</h1>

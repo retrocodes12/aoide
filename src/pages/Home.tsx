@@ -81,7 +81,7 @@ export function Home() {
       )}
 
       {[['chill', 'Chill'], ['focus', 'Focus'], ['workout', 'Workout'], ['party', 'Party']].map(([term, title]) => <MoodRow key={term} term={term} title={title} />)}
-      <p className="quick__hint" style={{ marginTop: 28 }}>{mirrorsAreDown ? 'Every Monochrome mirror is down right now; browsing TIDAL\'s catalogue directly, previews only.' : 'Catalogue from Monochrome mirrors.'} Lyrics from lrclib. <Link to="/settings" style={{ color: 'var(--fg)', fontWeight: 700 }}>Settings</Link></p>
+      <p className="quick__hint" style={{ marginTop: 28 }} data-testid="source_note">{mirrorsAreDown ? 'Every Monochrome mirror is down right now; browsing TIDAL\'s catalogue directly, previews only.' : 'Catalogue from Monochrome mirrors.'} Lyrics from lrclib. <Link to="/settings" style={{ color: 'var(--fg)', fontWeight: 700 }}>Settings</Link></p>
     </div>
   )
 }

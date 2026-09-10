@@ -28,6 +28,8 @@ export function Settings() {
   const setTintFrom = useUI((s) => s.setTintFrom)
   const down = useMirrorsDown()
   const hasTrack = usePlayer((s) => s.index >= 0)
+  const granted = usePlayer((s) => s.stream?.quality ?? null)
+  const grantedLabel = granted ? (QUALITIES.find((x) => x.id === granted)?.label ?? granted) : null
   useEffect(() => subscribe((l) => setInstances([...l])), [])
   useEffect(() => setTintFrom('#4a4a4a'), [setTintFrom])
 
@@ -63,7 +65,7 @@ export function Settings() {
         const unavailable = down && q.id === 'HI_RES_LOSSLESS'
         return (
         <button key={q.id} className={`radio${quality === q.id ? ' is-on' : ''}`} role="radio" aria-checked={quality === q.id} aria-disabled={unavailable} disabled={unavailable} data-testid={`quality_${q.id}`} onClick={() => { setQuality(q.id); if (hasTrack) toast(`${q.label}. Reloading the current song.`) }}>
-          <span className="radio__mark" aria-hidden /><span><b>{q.label}</b><small>{unavailable ? 'Not available on the TIDAL fallback' : q.note}</small></span>
+          <span className="radio__mark" aria-hidden /><span><b>{q.label}</b><small>{unavailable ? 'Not available on the TIDAL fallback' : quality === q.id && granted && granted !== q.id ? `${q.note}. This song is only available as ${grantedLabel}.` : q.note}</small></span>
         </button>
         )
       })}

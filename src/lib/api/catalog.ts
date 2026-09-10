@@ -160,8 +160,10 @@ export async function getLyrics(t: Track, o: Opts = {}): Promise<Lyrics | null> 
           })
           .filter((x): x is { t: number; line: string } => Boolean(x))
       : undefined
+    // LRC files open with metadata tags ([ar:], [ti:], [by:] ...); those are not lyrics.
+    const plain = j.plainLyrics?.split('\n').filter((l) => !/^\[[a-z]{2,}:.*\]\s*$/i.test(l)).join('\n').trim()
     // A synced field that parses to no timed lines is no synced lyrics at all; hand back plain text only.
-    return { plain: j.plainLyrics?.trim() ? j.plainLyrics : undefined, synced: synced?.length ? synced : undefined, source: 'lrclib' }
+    return { plain: plain || undefined, synced: synced?.length ? synced : undefined, source: 'lrclib' }
   } catch {
     return null
   }

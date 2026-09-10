@@ -3,8 +3,9 @@
 .pill:active:not(:disabled) { transform: scale(.97); }
 .pill--filled { background: var(--accent); color: var(--accent-ink); }
 .pill:disabled { opacity: 1; }
-.pill--filled:disabled { background: var(--elevated-2); color: var(--muted); }
-.pill--soft:disabled { background: var(--highlight); color: var(--muted); }
+/* disabled pills stay neutral but their labels still read: subdued ink measures 6.9:1 on the elevated fill */
+.pill--filled:disabled { background: var(--elevated-2); color: var(--subdued); }
+.pill--soft:disabled { background: var(--highlight); color: var(--subdued); }
 .pill--soft { background: var(--highlight); color: var(--accent); }
 .pill--white { background: var(--fg); color: var(--base); border-radius: 500px; height: 40px; }
 .pill svg { width: 20px; height: 20px; }
