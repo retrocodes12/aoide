@@ -160,7 +160,8 @@ export async function getLyrics(t: Track, o: Opts = {}): Promise<Lyrics | null> 
           })
           .filter((x): x is { t: number; line: string } => Boolean(x))
       : undefined
-    return { plain: j.plainLyrics, synced, source: 'lrclib' }
+    // A synced field that parses to no timed lines is no synced lyrics at all; hand back plain text only.
+    return { plain: j.plainLyrics?.trim() ? j.plainLyrics : undefined, synced: synced?.length ? synced : undefined, source: 'lrclib' }
   } catch {
     return null
   }

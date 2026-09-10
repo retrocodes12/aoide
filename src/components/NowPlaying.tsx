@@ -104,7 +104,8 @@ export function NowPlaying() {
   const pos = scrub ?? position
   const badge = streamBadge(track, stream)
   const go = (r: string) => { closeNowPlaying(); nav(r) }
-  const lines = lyrics.data?.synced?.map((l) => l.line).filter(Boolean) ?? lyrics.data?.plain?.split('\n').filter(Boolean) ?? []
+  // Same rule as the lyrics screen: synced lines when there are any, else plain text, else nothing.
+  const lines = (lyrics.data?.synced?.length ? lyrics.data.synced.map((l) => l.line) : lyrics.data?.plain?.split('\n') ?? []).filter(Boolean)
   return (
     <section ref={sheet} className={`overlay${open ? ' is-open' : ''}`} aria-hidden={!open} inert={!open} aria-label="Now playing" data-testid="now_playing">
       <div className="np">
