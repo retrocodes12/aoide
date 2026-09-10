@@ -179,6 +179,11 @@ export const usePlayer = create<PlayerState>((set, get) => {
     }
   }
   let lastPosPush = 0
+  if (typeof window !== 'undefined') {
+    const flush = () => saveSession(true)
+    window.addEventListener('pagehide', flush)
+    document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'hidden') flush() })
+  }
 
   if (session) {
     queueMicrotask(() => {

@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { addInstance, getInstances, removeInstance, resetInstances, refreshFromUptime, subscribe, type Instance } from '../lib/api/instances'
+import { addInstance, getInstances, probeMirrors, removeInstance, resetInstances, refreshFromUptime, subscribe, type Instance } from '../lib/api/instances'
 import { clearApiCache } from '../lib/api/client'
 import type { Quality } from '../lib/api/types'
 import { useDocumentTitle, useMirrorsDown } from '../lib/hooks'
@@ -31,6 +31,8 @@ export function Settings() {
   const granted = usePlayer((s) => s.stream?.quality ?? null)
   const grantedLabel = granted ? (QUALITIES.find((x) => x.id === granted)?.label ?? granted) : null
   useEffect(() => subscribe((l) => setInstances([...l])), [])
+  // A benched mirror stays benched for 90 s; re-probe on entry so the labels describe now, not the last failure.
+  useEffect(() => { void probeMirrors() }, [])
   useEffect(() => setTintFrom('#4a4a4a'), [setTintFrom])
 
   async function check(inst: Instance) {
@@ -77,7 +79,7 @@ export function Settings() {
           <div key={inst.url} className="instance" data-testid="instance_row">
             <div className="instance__main">
               <div className="instance__url">{inst.url.replace(/^https?:\/\//, '')}</div>
-              <div className="instance__tags">{[inst.isUser ? 'yours' : 'public', inst.version && inst.version !== 'custom' ? `v${inst.version}` : null, inst.coolUntil && inst.coolUntil > Date.now() ? 'down' : null, inst.lastLatency ? `${Math.round(inst.lastLatency)} ms` : null].filter(Boolean).join(' · ')}</div>
+              <div className="instance__tags">{[inst.isUser ? 'yours' : 'public', inst.version && inst.version !== 'custom' ? `v${inst.version}` : null, inst.coolUntil && inst.coolUntil > Date.now() ? 'not answering' : null, inst.lastLatency ? `${Math.round(inst.lastLatency)} ms` : null].filter(Boolean).join(' · ')}</div>
               {st && <div className={`instance__status${st.includes('ms') ? ' is-ok' : ''}`} data-testid="instance_status">{st}</div>}
             </div>
             <button className="pill pill--outline" onClick={() => check(inst)} disabled={checking !== null}>Test</button>

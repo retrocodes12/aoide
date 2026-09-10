@@ -235,6 +235,7 @@ export function QueueScreen() {
   const status = usePlayer((s) => s.status)
   const context = usePlayer((s) => s.context)
   const { jumpTo, removeAt, moveInQueue, clearUpcoming, toggle } = usePlayer.getState()
+  const ask = useUI((s) => s.ask)
   const [lifted, setLifted] = useState<number | null>(null)
   const listRef = useRef<HTMLDivElement>(null)
   const current = queue[index]
@@ -270,7 +271,7 @@ export function QueueScreen() {
               <QRow t={current} current onClick={toggle} playing={playing} />
               {upcoming.length ? (
                 <>
-                  <div className="queue__label"><span>Next {context ? <b>from: {context.title}</b> : null}</span><button className="linkbtn" data-testid="queue_clear" onClick={clearUpcoming}>Clear queue</button></div>
+                  <div className="queue__label"><span>Next {context ? <b>from: {context.title}</b> : null}</span><button className="linkbtn" data-testid="queue_clear" onClick={() => ask('Clear the queue?', 'Clear', clearUpcoming, 'Everything after the current song is removed. The song playing now keeps playing.')}>Clear queue</button></div>
                   {upcoming.map((t, k) => {
                     const i = index + 1 + k
                     return <QRow key={`${t.id}-${i}`} t={t} qi={i} lifted={lifted === i} onClick={() => jumpTo(i)} onRemove={() => removeAt(i)} onGrip={startDrag(i)} />
