@@ -4,30 +4,51 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
-import androidx.compose.ui.graphics.Color
 import app.aoide.data.Track
+import app.aoide.ui.theme.Tint
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 
-/** Cross-screen UI state: overlays, toasts, the track menu, and the page tint. */
+/** A destructive action waiting for the listener's say-so; rendered as a bottom sheet, never a system dialog. */
+data class Confirm(val title: String, val action: String, val body: String? = null, val onConfirm: () -> Unit)
+
+/**
+ * Cross-screen UI state: overlays, toasts, the track menu, and two tints. [page] belongs to the
+ * screen being browsed (album heads); [player] belongs to the song that is playing (mini player,
+ * now playing, lyrics). Browsing another record must never recolour the capsule of the song still
+ * playing.
+ */
 object AppUi {
     var nowPlayingOpen by mutableStateOf(false)
     var lyricsOpen by mutableStateOf(false)
     var queueOpen by mutableStateOf(false)
     var menuTrack by mutableStateOf<Track?>(null)
     var menuRemove by mutableStateOf<(() -> Unit)?>(null)
-    var tint by mutableStateOf(Color(0xFF4A4A4A))
+    var confirm by mutableStateOf<Confirm?>(null)
+    var page by mutableStateOf(Tint.FALLBACK)
+    var player by mutableStateOf(Tint.FALLBACK)
 
     fun openMenu(t: Track, onRemove: (() -> Unit)? = null) {
         menuTrack = t
         menuRemove = onRemove
     }
 
+    fun ask(title: String, action: String, body: String? = null, onConfirm: () -> Unit) {
+        confirm = Confirm(title, action, body, onConfirm)
+    }
+
     fun closeOverlays() {
         nowPlayingOpen = false
         lyricsOpen = false
         queueOpen = false
+        confirm = null
     }
+}
+
+/** Test seam: a route the real NavHost navigates to when set. */
+object TestNav {
+    var request by mutableStateOf<String?>(null)
+    fun go(route: String) { request = route }
 }
 
 object Toasts {
@@ -70,3 +91,6 @@ fun <T> rememberResource(vararg keys: Any?, loader: suspend () -> T): androidx.c
     }
     return state
 }
+
+/** "1 song", "12 songs". */
+fun plural(n: Int, word: String): String = if (n == 1) "1 $word" else "$n ${word}s"

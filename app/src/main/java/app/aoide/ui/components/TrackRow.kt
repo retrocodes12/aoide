@@ -84,7 +84,8 @@ fun TrackRow(
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
             )
-            Row(verticalAlignment = Alignment.CenterVertically) {
+            val sub = subtitle ?: track.artistNames
+            if (sub.isNotBlank() || track.explicit || (number == null && playing)) Row(verticalAlignment = Alignment.CenterVertically) {
                 if (number == null && playing) {
                     Equaliser(); Spacer(Modifier.width(6.dp))
                 }
@@ -94,7 +95,7 @@ fun TrackRow(
                     }
                     Spacer(Modifier.width(6.dp))
                 }
-                Text(subtitle ?: track.artistNames, style = MaterialTheme.typography.bodyMedium, color = Aoide.subdued, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                if (sub.isNotBlank()) Text(sub, style = MaterialTheme.typography.bodyMedium, color = Aoide.subdued, maxLines = 1, overflow = TextOverflow.Ellipsis)
             }
         }
         if (showDuration) Text(formatTime(track.duration), style = MaterialTheme.typography.bodySmall, color = Aoide.subdued, modifier = Modifier.padding(end = 4.dp))

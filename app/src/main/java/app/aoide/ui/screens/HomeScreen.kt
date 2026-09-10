@@ -24,6 +24,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -35,6 +36,8 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import app.aoide.data.Album
 import app.aoide.data.Catalog
+import app.aoide.data.Instances
+import app.aoide.data.Playlist
 import app.aoide.data.Library
 import app.aoide.data.PlayContext
 import app.aoide.data.Track
@@ -175,7 +178,13 @@ fun HomeScreen(onNavigate: (String) -> Unit) {
         }
         item { Spacer(Modifier.height(24.dp)) }
         item {
-            Text("Catalogue from Monochrome mirrors. Lyrics from lrclib.", style = MaterialTheme.typography.bodySmall, color = Aoide.muted, modifier = Modifier.padding(16.dp).clickable { onNavigate("settings") })
+            val health by Instances.health.collectAsState()
+            val source by Instances.source.collectAsState()
+            val down = remember(health, source) { Instances.mirrorsDown() }
+            Text(
+                (if (down) "Every Monochrome mirror is down right now; browsing TIDAL's catalogue directly, previews only. " else "Catalogue from Monochrome mirrors. ") + "Lyrics from lrclib.",
+                style = MaterialTheme.typography.bodySmall, color = Aoide.subdued, modifier = Modifier.padding(16.dp).clickable { onNavigate("settings") }.testTag("source_note"),
+            )
             Spacer(Modifier.height(140.dp))
         }
     }
@@ -183,7 +192,7 @@ fun HomeScreen(onNavigate: (String) -> Unit) {
 
 @Composable
 private fun MoodRow(term: String, title: String, onNavigate: (String) -> Unit) {
-    val res by rememberResource("mood", term) { Catalog.searchPlaylists(term, 12) }
+    val res by rememberResource("mood", term) { englishFirst(Catalog.searchPlaylists(term, 16)).take(12) }
     val r = res
     if (r is Resource.Failed || (r is Resource.Ready && r.value.isEmpty())) return
     Column {
@@ -195,6 +204,13 @@ private fun MoodRow(term: String, title: String, onNavigate: (String) -> Unit) {
             else -> SkeletonCards()
         }
     }
+}
+
+/** Mood rows should not open with Danish and Portuguese titles; prefer playlists whose words are plain ASCII. */
+fun englishFirst(list: List<Playlist>): List<Playlist> {
+    val ascii = Regex("^[\\x20-\\x7E]*$")
+    val (en, other) = list.partition { ascii.matches(it.title) && ascii.matches(it.cleanDescription.take(80)) }
+    return en + other
 }
 
 @Composable

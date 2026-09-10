@@ -128,7 +128,7 @@ data class ManifestInfo(
 )
 
 enum class Quality(val label: String, val note: String) {
-    HI_RES_LOSSLESS("Hi-Res", "FLAC up to 24-bit / 192 kHz when the mirror has it"),
+    HI_RES_LOSSLESS("Hi-Res Lossless", "FLAC up to 24-bit / 192 kHz when the mirror has it"),
     LOSSLESS("Lossless", "FLAC 16-bit / 44.1 kHz. The default."),
     HIGH("High", "AAC 320 kbps"),
     LOW("Low", "AAC 96 kbps for thin connections"),

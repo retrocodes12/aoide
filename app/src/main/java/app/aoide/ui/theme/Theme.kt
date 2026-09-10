@@ -77,23 +77,8 @@ fun AoideTheme(content: @Composable () -> Unit) {
     MaterialTheme(colorScheme = scheme, typography = AoideTypography, content = content)
 }
 
-/** Parse "#rrggbb" from the catalogue into a Color usable as a header tint. */
-fun tintOf(hex: String?, fallback: Color = Color(0xFF4A4A4A)): Color {
-    val h = hex?.trim()?.removePrefix("#") ?: return fallback
-    if (h.length != 6) return fallback
-    val rgb = h.toLongOrNull(16) ?: return fallback
-    return adjustTint(Color(0xFF000000 or rgb))
-}
+/** Parse "#rrggbb" from the catalogue into a header tint. Prefer [Tint.of] when the ink matters too. */
+fun tintOf(hex: String?, fallback: Color = Color(0xFF4A4A4A)): Color = if (hex == null) Tint.from(fallback).accent else Tint.of(hex).accent
 
-/** Header tints read best mid-lightness and clearly saturated. */
-fun adjustTint(c: Color): Color {
-    val hsl = FloatArray(3)
-    android.graphics.Color.RGBToHSV((c.red * 255).toInt(), (c.green * 255).toInt(), (c.blue * 255).toInt(), hsl)
-    // hsl here is HSV: [hue, sat, value]
-    var s = hsl[1]
-    var v = hsl[2]
-    if (v < 0.35f) v = 0.42f
-    if (v > 0.78f) v = 0.7f
-    if (s > 0.05f && s < 0.35f) s = 0.42f
-    return Color(android.graphics.Color.HSVToColor(floatArrayOf(hsl[0], s, v)))
-}
+/** Header tints read best mid-lightness and clearly saturated; the ink is solved alongside. */
+fun adjustTint(c: Color): Color = Tint.from(c).accent

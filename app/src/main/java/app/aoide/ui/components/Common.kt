@@ -20,11 +20,12 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Favorite
-import androidx.compose.material.icons.filled.PlayArrow
-import androidx.compose.material.icons.filled.Pause
-import androidx.compose.material.icons.outlined.AddCircleOutline
 import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.filled.ChevronRight
+import androidx.compose.material.icons.filled.Favorite
+import androidx.compose.material.icons.filled.Pause
+import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.outlined.AddCircleOutline
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -36,16 +37,18 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
-import androidx.compose.material.icons.filled.ChevronRight
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Shape
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import app.aoide.data.ApiException
 import app.aoide.data.Library
 import app.aoide.data.Track
 import app.aoide.ui.Toasts
@@ -82,7 +85,7 @@ fun SectionTitle(text: String, modifier: Modifier = Modifier, onSeeAll: (() -> U
     Row(modifier.fillMaxWidth().padding(horizontal = 16.dp).padding(top = 26.dp, bottom = 12.dp), verticalAlignment = Alignment.CenterVertically) {
         Row(Modifier.weight(1f).let { m -> if (onSeeAll != null) m.clickable(onClick = onSeeAll) else m }, verticalAlignment = Alignment.CenterVertically) {
             Text(text, style = MaterialTheme.typography.headlineSmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
-            if (onSeeAll != null) Icon(androidx.compose.material.icons.Icons.Filled.ChevronRight, null, tint = Aoide.subdued, modifier = Modifier.padding(start = 2.dp, top = 2.dp).size(22.dp))
+            if (onSeeAll != null) Icon(Icons.Filled.ChevronRight, null, tint = Aoide.subdued, modifier = Modifier.padding(start = 2.dp, top = 2.dp).size(22.dp))
         }
         action?.invoke()
     }
@@ -121,50 +124,71 @@ fun Chip(text: String, selected: Boolean, onClick: () -> Unit) {
 @Composable
 fun PlayFab(playing: Boolean, size: Dp = 56.dp, enabled: Boolean = true, onClick: () -> Unit) {
     Box(
-        Modifier.size(size).clip(CircleShape).background(if (enabled) Aoide.accent else Aoide.accent.copy(alpha = .4f)).clickable(enabled = enabled, onClick = onClick)
+        Modifier.size(size).clip(CircleShape).background(if (enabled) Aoide.accent else Aoide.elevated2).clickable(enabled = enabled, onClick = onClick)
             .semantics { contentDescription = if (playing) "Pause" else "Play" }.testTag("play_fab"),
         contentAlignment = Alignment.Center,
     ) {
-        Icon(if (playing) Icons.Filled.Pause else Icons.Filled.PlayArrow, null, tint = Aoide.accentInk, modifier = Modifier.size(size * 0.5f))
+        Icon(if (playing) Icons.Filled.Pause else Icons.Filled.PlayArrow, null, tint = if (enabled) Aoide.accentInk else Aoide.subdued, modifier = Modifier.size(size * 0.5f))
     }
+}
+
+/** A translucent disc behind an icon, so a control over artwork clears 3:1 on any tint. Apple Music's move. */
+@Composable
+fun IconDisc(icon: ImageVector, description: String, modifier: Modifier = Modifier, tint: Color = Color.White, onClick: () -> Unit) {
+    Box(
+        modifier.size(40.dp).clip(CircleShape).background(Color.Black.copy(alpha = .5f)).clickable(onClick = onClick).semantics { contentDescription = description },
+        contentAlignment = Alignment.Center,
+    ) { Icon(icon, null, tint = tint, modifier = Modifier.size(24.dp)) }
 }
 
 /** Heart that toggles Liked Songs. Spotify draws it as a + / check; the heart says more here. */
 @Composable
-fun LikeButton(track: Track, size: Dp = 24.dp, modifier: Modifier = Modifier) {
+fun LikeButton(track: Track, size: Dp = 24.dp, modifier: Modifier = Modifier, tint: Color = Aoide.subdued) {
     val lib by Library.state.collectAsState()
     val liked = lib.isLiked(track.id)
     IconButton(
         onClick = { Toasts.show(if (Library.toggleLike(track)) "Added to Liked Songs" else "Removed from Liked Songs") },
         modifier = modifier.semantics { contentDescription = if (liked) "Remove from Liked Songs" else "Add to Liked Songs" }.testTag("like"),
     ) {
-        Icon(if (liked) Icons.Filled.CheckCircle else Icons.Outlined.AddCircleOutline, null, tint = if (liked) Aoide.accent else Aoide.subdued, modifier = Modifier.size(size))
+        Icon(if (liked) Icons.Filled.CheckCircle else Icons.Outlined.AddCircleOutline, null, tint = if (liked) Aoide.accent else tint, modifier = Modifier.size(size))
     }
 }
 
 @Composable
-fun OutlinePill(text: String, selected: Boolean = false, onClick: () -> Unit) {
+fun OutlinePill(text: String, selected: Boolean = false, enabled: Boolean = true, onClick: () -> Unit) {
     Box(
-        Modifier.clip(RoundedCornerShape(50)).border(1.dp, if (selected) Aoide.fg else Aoide.subdued.copy(alpha = .6f), RoundedCornerShape(50)).clickable(onClick = onClick).padding(horizontal = 14.dp, vertical = 6.dp),
-    ) { Text(text, style = MaterialTheme.typography.labelLarge, color = Aoide.fg) }
+        Modifier.clip(RoundedCornerShape(50)).border(1.dp, if (selected) Aoide.fg else Aoide.subdued.copy(alpha = .6f), RoundedCornerShape(50)).clickable(enabled = enabled, onClick = onClick).padding(horizontal = 14.dp, vertical = 6.dp),
+    ) { Text(text, style = MaterialTheme.typography.labelLarge, color = if (enabled) Aoide.fg else Aoide.subdued) }
 }
 
 @Composable
-fun EmptyState(title: String, body: String? = null, modifier: Modifier = Modifier) {
+fun EmptyState(title: String, body: String? = null, modifier: Modifier = Modifier, action: (@Composable () -> Unit)? = null) {
     Column(modifier.fillMaxWidth().padding(horizontal = 24.dp, vertical = 32.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-        Text(title, style = MaterialTheme.typography.headlineSmall, color = Aoide.fg, textAlign = androidx.compose.ui.text.style.TextAlign.Center)
-        if (body != null) Text(body, style = MaterialTheme.typography.bodyMedium, color = Aoide.subdued, textAlign = androidx.compose.ui.text.style.TextAlign.Center, modifier = Modifier.padding(top = 8.dp))
+        Text(title, style = MaterialTheme.typography.headlineSmall, color = Aoide.fg, textAlign = TextAlign.Center)
+        if (body != null) Text(body, style = MaterialTheme.typography.bodyMedium, color = Aoide.subdued, textAlign = TextAlign.Center, modifier = Modifier.padding(top = 8.dp))
+        if (action != null) Box(Modifier.padding(top = 20.dp)) { action() }
     }
 }
 
+/** White pill, the secondary action of empty and error states. */
 @Composable
-fun ErrorState(error: Throwable, onRetry: () -> Unit) {
-    Column(Modifier.fillMaxWidth().padding(24.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-        Text("Something went wrong", style = MaterialTheme.typography.headlineSmall)
-        Text("Every mirror failed for this request. ${error.message ?: ""}", style = MaterialTheme.typography.bodyMedium, color = Aoide.subdued, modifier = Modifier.padding(top = 8.dp), textAlign = androidx.compose.ui.text.style.TextAlign.Center)
-        Box(Modifier.padding(top = 20.dp).clip(RoundedCornerShape(50)).background(Aoide.fg).clickable(onClick = onRetry).padding(horizontal = 28.dp, vertical = 12.dp)) {
-            Text("Try again", style = MaterialTheme.typography.labelLarge, color = Aoide.base)
-        }
+fun WhitePill(text: String, onClick: () -> Unit) {
+    Box(Modifier.clip(RoundedCornerShape(50)).background(Aoide.fg).clickable(onClick = onClick).padding(horizontal = 28.dp, vertical = 12.dp)) {
+        Text(text, style = MaterialTheme.typography.labelLarge, color = Aoide.base)
+    }
+}
+
+/**
+ * A failed load in words a listener can act on. A 404 says the thing is gone; anything else blames
+ * the mirrors without quoting them. Raw transport messages never reach the screen.
+ */
+@Composable
+fun ErrorState(error: Throwable, what: String = "page", onHome: (() -> Unit)? = null, onRetry: () -> Unit) {
+    val missing = (error as? ApiException)?.status == 404
+    if (missing) {
+        EmptyState("We couldn't find that $what", "It may have been removed from the catalogue, or the link is wrong.", action = onHome?.let { { WhitePill("Home", it) } })
+    } else {
+        EmptyState("Something went wrong", "The catalogue mirrors did not answer. Give it a moment and try again.", action = { WhitePill("Try again", onRetry) })
     }
 }
 
@@ -190,7 +214,7 @@ fun SkeletonCards(n: Int = 4) {
     Row(Modifier.padding(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
         repeat(n) {
             Column(Modifier.width(148.dp)) {
-                Box(Modifier.size(148.dp).clip(RoundedCornerShape(4.dp)).background(Aoide.elevated))
+                Box(Modifier.size(148.dp).clip(RoundedCornerShape(10.dp)).background(Aoide.elevated))
                 Spacer(Modifier.height(8.dp))
                 Box(Modifier.fillMaxWidth(.7f).height(12.dp).background(Aoide.elevated))
             }

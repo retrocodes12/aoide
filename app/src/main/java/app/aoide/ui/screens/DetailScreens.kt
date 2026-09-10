@@ -5,6 +5,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -18,11 +19,15 @@ import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.Pause
+import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Shuffle
 import androidx.compose.material.icons.outlined.AddCircleOutline
 import androidx.compose.material3.AlertDialog
@@ -48,8 +53,11 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.palette.graphics.Palette
 import app.aoide.data.Album
 import app.aoide.data.Catalog
@@ -67,18 +75,20 @@ import app.aoide.ui.components.Chip
 import app.aoide.ui.components.DetailHeader
 import app.aoide.ui.components.EmptyState
 import app.aoide.ui.components.ErrorState
+import app.aoide.ui.components.IconDisc
 import app.aoide.ui.components.LikedTile
 import app.aoide.ui.components.MediaCard
 import app.aoide.ui.components.OutlinePill
 import app.aoide.ui.components.PlayFab
 import app.aoide.ui.components.SectionTitle
+import app.aoide.ui.components.SkeletonCards
 import app.aoide.ui.components.SkeletonRows
 import app.aoide.ui.components.TrackRow
-import app.aoide.ui.rememberResource
+import app.aoide.ui.plural
 import app.aoide.ui.reload
+import app.aoide.ui.rememberResource
 import app.aoide.ui.theme.Aoide
-import app.aoide.ui.theme.adjustTint
-import app.aoide.ui.theme.tintOf
+import app.aoide.ui.theme.Tint
 import coil3.ImageLoader
 import coil3.request.ImageRequest
 import coil3.request.allowHardware
@@ -88,7 +98,7 @@ import kotlinx.coroutines.withContext
 
 /** Sample a header tint from artwork when the catalogue gives no vibrant colour. */
 @Composable
-fun rememberImageTint(url: String?, fallback: Color): Color {
+fun rememberImageTint(url: String?, fallback: Tint): Tint {
     val ctx = LocalContext.current
     var tint by remember(url) { mutableStateOf(fallback) }
     LaunchedEffect(url) {
@@ -101,10 +111,12 @@ fun rememberImageTint(url: String?, fallback: Color): Color {
                 (p.vibrantSwatch ?: p.darkVibrantSwatch ?: p.lightVibrantSwatch ?: p.mutedSwatch ?: p.dominantSwatch)?.rgb?.let { Color(it) }
             }.getOrNull()
         }
-        if (c != null) tint = adjustTint(c)
+        if (c != null) tint = Tint.from(c)
     }
     return tint
 }
+
+private fun typeLabel(type: String?) = type?.let { if (it == "ALBUM") "Album" else it.lowercase().replaceFirstChar(Char::uppercase) } ?: "Album"
 
 @Composable
 fun AlbumScreen(id: Long, onBack: () -> Unit, onNavigate: (String) -> Unit) {
@@ -115,11 +127,12 @@ fun AlbumScreen(id: Long, onBack: () -> Unit, onNavigate: (String) -> Unit) {
     val r = res
     val album = (r as? Resource.Ready)?.value?.first
     val tracks = (r as? Resource.Ready)?.value?.second.orEmpty()
-    val tint = tintOf(album?.vibrantColor)
-    LaunchedEffect(album) { album?.let { Library.recordAlbum(it); AppUi.tint = tint } }
+    val tint = remember(album?.vibrantColor) { Tint.of(album?.vibrantColor) }
+    LaunchedEffect(album) { album?.let { Library.recordAlbum(it); AppUi.page = tint } }
     val ctx = PlayContext("album", album?.title ?: "", "album/$id")
     val thisPlaying = player.context?.href == ctx.href && player.isPlaying
-    if (r is Resource.Failed) return Column { BackRow(onBack); ErrorState(r.error) { r.reload() } }
+    if (r is Resource.Failed) return Column { BackRow(onBack); ErrorState(r.error, what = "album", onHome = { onNavigate("home") }) { r.reload() } }
+    val albumArtist = album?.primaryArtist?.name
     LazyColumn(Modifier.testTag("album_screen")) {
         item {
             DetailHeader(
@@ -128,13 +141,13 @@ fun AlbumScreen(id: Long, onBack: () -> Unit, onNavigate: (String) -> Unit) {
                     { Text(a.name, style = MaterialTheme.typography.titleMedium, color = Aoide.accent, modifier = Modifier.clickable { onNavigate("artist/${a.id}") }) }
                 },
                 badge = album?.let { a -> if (a.audioQuality == "HI_RES_LOSSLESS") "Hi-Res Lossless" else if (a.audioQuality == "LOSSLESS") "Lossless" else null },
-                meta = album?.let { a -> listOfNotNull(a.type?.let { if (it == "ALBUM") "Album" else it.lowercase().replaceFirstChar(Char::uppercase) } ?: "Album", a.year.ifBlank { null }, "${tracks.size} songs", tracks.sumOf { it.duration }.takeIf { it > 0 }?.let(::formatLength)).joinToString(" · ") } ?: "Album",
+                meta = album?.let { a -> listOfNotNull(typeLabel(a.type), a.year.ifBlank { null }, plural(tracks.size, "song"), tracks.sumOf { it.duration }.takeIf { it > 0 }?.let(::formatLength)).joinToString(" · ") } ?: "Album",
                 onBack = onBack,
                 leftActions = {
                     if (album != null) {
                         val saved = lib.hasAlbum(album.id)
-                        IconButton(onClick = { Toasts.show(if (Library.toggleAlbum(album)) "Added to Your Library" else "Removed from Your Library") }, modifier = Modifier.semantics { contentDescription = if (saved) "Remove from Your Library" else "Save to Your Library" }.testTag("save_album")) {
-                            Icon(if (saved) Icons.Filled.CheckCircle else Icons.Outlined.AddCircleOutline, null, tint = if (saved) Aoide.accent else Aoide.subdued, modifier = Modifier.size(26.dp))
+                        IconDisc(if (saved) Icons.Filled.CheckCircle else Icons.Outlined.AddCircleOutline, if (saved) "Remove from Your Library" else "Save to Your Library", Modifier.testTag("save_album"), tint = if (saved) Aoide.accent else Color.White) {
+                            Toasts.show(if (Library.toggleAlbum(album)) "Added to Your Library" else "Removed from Your Library")
                         }
                     }
                 },
@@ -144,7 +157,11 @@ fun AlbumScreen(id: Long, onBack: () -> Unit, onNavigate: (String) -> Unit) {
             )
         }
         if (r is Resource.Loading) item { SkeletonRows(8) }
-        items(tracks.withIndex().toList(), key = { it.value.id }) { (i, t) -> TrackRow(t, showArt = false, number = i + 1, onClick = { PlayerController.playTracks(tracks, i, ctx) }) }
+        items(tracks.withIndex().toList(), key = { it.value.id }) { (i, t) ->
+            // Apple Music's album view: the artist line only appears when a track's credits differ from the album's.
+            val names = t.artistNames
+            TrackRow(t, showArt = false, number = i + 1, subtitle = if (names == albumArtist) "" else names, onClick = { PlayerController.playTracks(tracks, i, ctx) })
+        }
         if (album != null) {
             item {
                 Column(Modifier.padding(16.dp)) {
@@ -170,7 +187,7 @@ fun prettyDate(iso: String): String = runCatching {
 
 @Composable
 private fun BackRow(onBack: () -> Unit) {
-    Row(Modifier.statusBarsPadding().padding(4.dp)) { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back", tint = Aoide.fg) } }
+    Row(Modifier.statusBarsPadding().padding(10.dp)) { IconDisc(Icons.AutoMirrored.Filled.ArrowBack, "Back", Modifier.testTag("back"), onClick = onBack) }
 }
 
 @Composable
@@ -181,22 +198,22 @@ fun PlaylistScreen(uuid: String, onBack: () -> Unit, onNavigate: (String) -> Uni
     val r = res
     val p = (r as? Resource.Ready)?.value?.first
     val tracks = (r as? Resource.Ready)?.value?.second.orEmpty()
-    val tint = rememberImageTint(p?.let { Catalog.playlistImage(it, 160) }, tintOf(tracks.firstOrNull()?.album?.vibrantColor))
-    LaunchedEffect(tint) { AppUi.tint = tint }
+    val tint = rememberImageTint(p?.let { Catalog.playlistImage(it, 160) }, Tint.of(tracks.firstOrNull()?.album?.vibrantColor))
+    LaunchedEffect(tint) { AppUi.page = tint }
     val ctx = PlayContext("playlist", p?.title ?: "", "playlist/$uuid")
     val thisPlaying = player.context?.href == ctx.href && player.isPlaying
-    if (r is Resource.Failed) return Column { BackRow(onBack); ErrorState(r.error) { r.reload() } }
+    if (r is Resource.Failed) return Column { BackRow(onBack); ErrorState(r.error, what = "playlist", onHome = { onNavigate("home") }) { r.reload() } }
     LazyColumn(Modifier.testTag("playlist_screen")) {
         item {
             DetailHeader(
                 tint = tint, image = p?.let { Catalog.playlistImage(it, 640) }, title = p?.title ?: "", description = p?.cleanDescription,
-                meta = listOfNotNull(p?.creator?.name ?: if (p?.type == "EDITORIAL") "Editorial" else "Playlist", "${tracks.size} songs", tracks.sumOf { it.duration }.takeIf { it > 0 }?.let(::formatLength)).joinToString(" · "),
+                meta = listOfNotNull(p?.creator?.name ?: if (p?.type == "EDITORIAL") "Editorial" else "Playlist", plural(tracks.size, "song"), tracks.sumOf { it.duration }.takeIf { it > 0 }?.let(::formatLength)).joinToString(" · "),
                 onBack = onBack,
                 leftActions = {
                     if (p != null) {
                         val saved = lib.hasPlaylist(p.uuid)
-                        IconButton(onClick = { Toasts.show(if (Library.togglePlaylist(p)) "Added to Your Library" else "Removed from Your Library") }, modifier = Modifier.semantics { contentDescription = if (saved) "Remove from Your Library" else "Add to Your Library" }.testTag("save_playlist")) {
-                            Icon(if (saved) Icons.Filled.CheckCircle else Icons.Outlined.AddCircleOutline, null, tint = if (saved) Aoide.accent else Aoide.subdued, modifier = Modifier.size(26.dp))
+                        IconDisc(if (saved) Icons.Filled.CheckCircle else Icons.Outlined.AddCircleOutline, if (saved) "Remove from Your Library" else "Add to Your Library", Modifier.testTag("save_playlist"), tint = if (saved) Aoide.accent else Color.White) {
+                            Toasts.show(if (Library.togglePlaylist(p)) "Added to Your Library" else "Removed from Your Library")
                         }
                     }
                 },
@@ -217,21 +234,25 @@ fun LocalPlaylistScreen(id: String, onBack: () -> Unit) {
     val pl = lib.playlists.find { it.id == id }
     val player by PlayerController.state.collectAsState()
     var rename by remember { mutableStateOf(false) }
-    var confirmDelete by remember { mutableStateOf(false) }
     if (pl == null) return Column { BackRow(onBack); EmptyState("That playlist is gone") }
-    val tint = tintOf(pl.tracks.firstOrNull()?.album?.vibrantColor)
-    LaunchedEffect(tint) { AppUi.tint = tint }
+    val tint = remember(pl.tracks.firstOrNull()?.album?.vibrantColor) { Tint.of(pl.tracks.firstOrNull()?.album?.vibrantColor) }
+    LaunchedEffect(tint) { AppUi.page = tint }
     val ctx = PlayContext("playlist", pl.title, "local/${pl.id}")
     val thisPlaying = player.context?.href == ctx.href && player.isPlaying
     LazyColumn(Modifier.testTag("local_playlist_screen")) {
         item {
             DetailHeader(
                 tint = tint, image = Catalog.cover(pl.tracks.firstOrNull()?.album?.cover, 640), title = pl.title,
-                meta = "You · ${pl.tracks.size} songs" + (pl.tracks.sumOf { it.duration }.takeIf { it > 0 }?.let { " · ${formatLength(it)}" } ?: ""),
+                meta = "You · ${plural(pl.tracks.size, "song")}" + (pl.tracks.sumOf { it.duration }.takeIf { it > 0 }?.let { " · ${formatLength(it)}" } ?: ""),
                 onBack = onBack,
                 leftActions = {
-                    IconButton(onClick = { rename = true }, modifier = Modifier.semantics { contentDescription = "Rename playlist" }) { Icon(Icons.Filled.Edit, null, tint = Aoide.subdued) }
-                    IconButton(onClick = { confirmDelete = true }, modifier = Modifier.semantics { contentDescription = "Delete playlist" }) { Icon(Icons.Filled.Delete, null, tint = Aoide.subdued) }
+                    IconDisc(Icons.Filled.Edit, "Rename playlist", Modifier.testTag("rename_playlist")) { rename = true }
+                    Spacer(Modifier.width(8.dp))
+                    IconDisc(Icons.Filled.Delete, "Delete playlist", Modifier.testTag("delete_playlist")) {
+                        AppUi.ask("Delete “${pl.title}”?", "Delete", "This removes the playlist from this device. Songs stay in the catalogue.") {
+                            Library.deletePlaylist(pl.id); Toasts.show("Playlist deleted"); onBack()
+                        }
+                    }
                 },
                 shuffle = { if (!player.shuffle) PlayerController.toggleShuffle(); PlayerController.playTracks(pl.tracks, pl.tracks.indices.random(), ctx) },
                 playing = thisPlaying, canPlay = pl.tracks.isNotEmpty(),
@@ -246,15 +267,11 @@ fun LocalPlaylistScreen(id: String, onBack: () -> Unit) {
     }
     if (rename) {
         var name by remember { mutableStateOf(pl.title) }
+        val save = { Library.renamePlaylist(pl.id, name); rename = false; Toasts.show("Renamed") }
         AlertDialog(onDismissRequest = { rename = false }, containerColor = Aoide.elevated2, title = { Text("Rename playlist") },
-            text = { OutlinedTextField(name, { name = it }, singleLine = true) },
-            confirmButton = { TextButton(onClick = { Library.renamePlaylist(pl.id, name); rename = false }) { Text("Save", color = Aoide.accent) } },
+            text = { OutlinedTextField(name, { name = it }, singleLine = true, keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done), keyboardActions = KeyboardActions(onDone = { save() }), modifier = Modifier.testTag("rename_input")) },
+            confirmButton = { TextButton(onClick = save) { Text("Save", color = Aoide.accent) } },
             dismissButton = { TextButton(onClick = { rename = false }) { Text("Cancel", color = Aoide.subdued) } })
-    }
-    if (confirmDelete) {
-        AlertDialog(onDismissRequest = { confirmDelete = false }, containerColor = Aoide.elevated2, title = { Text("Delete \"${pl.title}\"?") }, text = { Text("This can't be undone.") },
-            confirmButton = { TextButton(onClick = { Library.deletePlaylist(pl.id); confirmDelete = false; Toasts.show("Playlist deleted"); onBack() }) { Text("Delete", color = Aoide.accent) } },
-            dismissButton = { TextButton(onClick = { confirmDelete = false }) { Text("Cancel", color = Aoide.subdued) } })
     }
 }
 
@@ -264,17 +281,17 @@ fun LikedScreen(onBack: () -> Unit) {
     val player by PlayerController.state.collectAsState()
     val ctx = PlayContext("liked", "Liked Songs", "liked")
     val thisPlaying = player.context?.href == ctx.href && player.isPlaying
-    LaunchedEffect(Unit) { AppUi.tint = Aoide.accent }
+    LaunchedEffect(Unit) { AppUi.page = Tint.from(Aoide.accent) }
     LazyColumn(Modifier.testTag("liked_screen")) {
         item {
-            Column(Modifier.fillMaxWidth().background(Brush.verticalGradient(listOf(Aoide.accent.copy(alpha = .85f), Aoide.ground), endY = 900f))) {
+            Column(Modifier.fillMaxWidth().background(Brush.verticalGradient(0f to Aoide.accent.copy(alpha = .85f), 0.64f to Aoide.ground, 1f to Aoide.ground, endY = 900f))) {
                 BackRow(onBack)
-                Box(Modifier.fillMaxWidth().padding(top = 8.dp), contentAlignment = Alignment.Center) { LikedTile(232.dp) }
-                Text("Liked Songs", style = MaterialTheme.typography.headlineMedium, modifier = Modifier.padding(start = 16.dp, top = 20.dp).testTag("detail_title"))
-                Text("You · ${lib.liked.size} songs", style = MaterialTheme.typography.bodySmall, color = Aoide.subdued, modifier = Modifier.padding(start = 16.dp, top = 6.dp))
-                Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
-                    Spacer(Modifier.weight(1f))
-                    PlayFab(playing = thisPlaying, enabled = lib.liked.isNotEmpty()) { if (player.context?.href == ctx.href && player.index >= 0) PlayerController.toggle() else PlayerController.playTracks(lib.liked, 0, ctx) }
+                Box(Modifier.fillMaxWidth().padding(top = 8.dp), contentAlignment = Alignment.Center) { LikedTile(232.dp, RoundedCornerShape(10.dp)) }
+                Text("Liked Songs", style = MaterialTheme.typography.headlineSmall, modifier = Modifier.fillMaxWidth().padding(top = 22.dp).testTag("detail_title"), textAlign = androidx.compose.ui.text.style.TextAlign.Center)
+                Text("You · ${plural(lib.liked.size, "song")}", style = MaterialTheme.typography.bodySmall, color = Aoide.subdued, modifier = Modifier.fillMaxWidth().padding(top = 6.dp), textAlign = androidx.compose.ui.text.style.TextAlign.Center)
+                Row(Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 18.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                    app.aoide.ui.components.PillButton(if (thisPlaying) "Pause" else "Play", if (thisPlaying) Icons.Filled.Pause else Icons.Filled.PlayArrow, filled = true, enabled = lib.liked.isNotEmpty(), modifier = Modifier.weight(1f).testTag("play_fab")) { if (player.context?.href == ctx.href && player.index >= 0) PlayerController.toggle() else PlayerController.playTracks(lib.liked, 0, ctx) }
+                    app.aoide.ui.components.PillButton("Shuffle", Icons.Filled.Shuffle, filled = false, enabled = lib.liked.isNotEmpty(), modifier = Modifier.weight(1f).testTag("shuffle")) { if (!player.shuffle) PlayerController.toggleShuffle(); PlayerController.playTracks(lib.liked, lib.liked.indices.random(), ctx) }
                 }
             }
         }
@@ -297,19 +314,26 @@ fun ArtistScreen(id: Long, onBack: () -> Unit, onNavigate: (String) -> Unit) {
     var filter by remember { mutableStateOf("ALL") }
     var moreTop by remember { mutableStateOf(false) }
     var moreBio by remember { mutableStateOf(false) }
-    val tint = rememberImageTint(a?.picture?.let { Catalog.artistPicture(it, 160) }, Color(0xFF4A4A4A))
-    LaunchedEffect(tint) { AppUi.tint = tint }
-    val ar = artist
-    if (ar is Resource.Failed) return Column { BackRow(onBack); ErrorState(ar.error) { ar.reload() } }
     val tracks = (top as? Resource.Ready)?.value.orEmpty()
+    // Artist pictures carry no vibrant colour; tint from the picture, else from the top song's record.
+    val tint = rememberImageTint(a?.picture?.let { Catalog.artistPicture(it, 160) }, Tint.of(tracks.firstOrNull()?.album?.vibrantColor))
+    LaunchedEffect(tint) { AppUi.page = tint }
+    val ar = artist
+    if (ar is Resource.Failed) return Column { BackRow(onBack); ErrorState(ar.error, what = "artist", onHome = { onNavigate("home") }) { ar.reload() } }
     val ctx = PlayContext("artist", a?.name ?: "", "artist/$id")
     val thisPlaying = player.context?.href == ctx.href && player.isPlaying
-    val albums = (disco as? Resource.Ready)?.value?.first.orEmpty().filter { filter == "ALL" || (it.type ?: "ALBUM") == filter }.sortedByDescending { it.releaseDate ?: "" }
+    val allAlbums = (disco as? Resource.Ready)?.value?.first.orEmpty()
+    val counts = allAlbums.groupingBy { it.type ?: "ALBUM" }.eachCount()
+    val albums = allAlbums.filter { filter == "ALL" || (it.type ?: "ALBUM") == filter }.sortedByDescending { it.releaseDate ?: "" }
     LazyColumn(Modifier.testTag("artist_screen")) {
         item {
-            Box(Modifier.fillMaxWidth().height(320.dp)) {
-                Artwork(Catalog.artistPicture(a?.picture, 750), Modifier.fillMaxWidth().height(320.dp), RoundedCornerShape(0.dp))
-                Box(Modifier.fillMaxWidth().height(320.dp).background(Brush.verticalGradient(listOf(Color.Transparent, Color.Black.copy(alpha = .35f), Aoide.ground))))
+            val h = if (a != null && a.picture == null) 240.dp else 320.dp
+            Box(Modifier.fillMaxWidth().height(h)) {
+                if (a?.picture != null || a == null) Artwork(Catalog.artistPicture(a?.picture, 750), Modifier.fillMaxWidth().height(h), RoundedCornerShape(0.dp))
+                else Box(Modifier.fillMaxWidth().height(h).background(Brush.verticalGradient(listOf(tint.accent.copy(alpha = .55f), Aoide.ground))), contentAlignment = Alignment.Center) {
+                    Text(a.name.take(1).uppercase(), style = MaterialTheme.typography.displayLarge.copy(fontSize = 96.sp, fontWeight = FontWeight.Black), color = Color.White.copy(alpha = .08f))
+                }
+                Box(Modifier.fillMaxWidth().height(h).background(Brush.verticalGradient(listOf(Color.Transparent, Color.Black.copy(alpha = .35f), Aoide.ground))))
                 BackRow(onBack)
                 Text(a?.name ?: "", style = MaterialTheme.typography.displayLarge, color = Aoide.fg, maxLines = 2, overflow = TextOverflow.Ellipsis, modifier = Modifier.align(Alignment.BottomStart).padding(16.dp).testTag("detail_title"))
             }
@@ -318,7 +342,7 @@ fun ArtistScreen(id: Long, onBack: () -> Unit, onNavigate: (String) -> Unit) {
             Row(Modifier.fillMaxWidth().padding(start = 16.dp, end = 12.dp, top = 4.dp), verticalAlignment = Alignment.CenterVertically) {
                 if (a != null) OutlinePill(if (lib.follows(a.id)) "Following" else "Follow", lib.follows(a.id)) { Toasts.show(if (Library.toggleArtist(a)) "Following ${a.name}" else "Unfollowed ${a.name}") }
                 Spacer(Modifier.weight(1f))
-                IconButton(onClick = { if (!player.shuffle) PlayerController.toggleShuffle(); PlayerController.playTracks(tracks, tracks.indices.random(), ctx) }, enabled = tracks.isNotEmpty(), modifier = Modifier.semantics { contentDescription = "Shuffle play" }) { Icon(Icons.Filled.Shuffle, null, tint = Aoide.subdued, modifier = Modifier.size(28.dp)) }
+                IconButton(onClick = { if (!player.shuffle) PlayerController.toggleShuffle(); PlayerController.playTracks(tracks, tracks.indices.random(), ctx) }, enabled = tracks.isNotEmpty(), modifier = Modifier.semantics { contentDescription = "Shuffle play" }.testTag("shuffle")) { Icon(Icons.Filled.Shuffle, null, tint = Aoide.subdued, modifier = Modifier.size(28.dp)) }
                 Spacer(Modifier.width(8.dp))
                 PlayFab(playing = thisPlaying, enabled = tracks.isNotEmpty()) { if (player.context?.href == ctx.href && player.index >= 0) PlayerController.toggle() else PlayerController.playTracks(tracks, 0, ctx) }
             }
@@ -335,16 +359,28 @@ fun ArtistScreen(id: Long, onBack: () -> Unit, onNavigate: (String) -> Unit) {
             }
             else -> item { SkeletonRows(5) }
         }
-        item { SectionTitle("Discography") }
-        item {
-            LazyRow(contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                items(listOf("ALL" to "All", "ALBUM" to "Albums", "EP" to "EPs", "SINGLE" to "Singles")) { (k, l) -> Chip(l, filter == k) { filter = k } }
+        // Discography only when there is one; chips only for the release types that exist.
+        val d = disco
+        if (d is Resource.Loading || d is Resource.Failed || allAlbums.isNotEmpty()) {
+            item {
+                SectionTitle("Discography", action = {
+                    val label = listOfNotNull(counts["ALBUM"]?.let { plural(it, "album") }, counts["EP"]?.let { "$it EPs" }, counts["SINGLE"]?.let { plural(it, "single") }).joinToString(" · ")
+                    if (label.isNotBlank()) Text(label, style = MaterialTheme.typography.bodySmall, color = Aoide.subdued)
+                })
             }
-        }
-        item {
-            Spacer(Modifier.height(12.dp))
-            if (disco is Resource.Loading) app.aoide.ui.components.SkeletonCards()
-            else CardRow(albums, { it.id }) { al -> MediaCard(Catalog.cover(al.cover, 320), al.title, listOfNotNull(al.year.ifBlank { null }, al.type?.let { if (it == "ALBUM") "Album" else it.lowercase().replaceFirstChar(Char::uppercase) }).joinToString(" · ")) { onNavigate("album/${al.id}") } }
+            if (d is Resource.Failed) item { ErrorState(d.error) { d.reload() } }
+            else {
+                item {
+                    LazyRow(contentPadding = PaddingValues(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        items(listOf("ALL" to "All releases", "ALBUM" to "Albums", "EP" to "EPs", "SINGLE" to "Singles").filter { (k, _) -> k == "ALL" || d is Resource.Loading || (counts[k] ?: 0) > 0 }) { (k, l) -> Chip(l, filter == k) { filter = k } }
+                    }
+                }
+                item {
+                    Spacer(Modifier.height(12.dp))
+                    if (d is Resource.Loading) SkeletonCards()
+                    else CardRow(albums, { it.id }) { al -> MediaCard(Catalog.cover(al.cover, 320), al.title, listOfNotNull(al.year.ifBlank { null }, typeLabel(al.type)).joinToString(" · ")) { onNavigate("album/${al.id}") } }
+                }
+            }
         }
         val sim = (similar as? Resource.Ready)?.value.orEmpty()
         if (sim.isNotEmpty()) {
@@ -356,7 +392,7 @@ fun ArtistScreen(id: Long, onBack: () -> Unit, onNavigate: (String) -> Unit) {
             item { SectionTitle("About") }
             item {
                 Column(Modifier.padding(horizontal = 16.dp).fillMaxWidth().clip(RoundedCornerShape(8.dp)).background(Aoide.elevated).clickable { moreBio = !moreBio }) {
-                    Artwork(Catalog.artistPicture(a?.picture, 480), Modifier.fillMaxWidth().height(200.dp), RoundedCornerShape(0.dp))
+                    if (a?.picture != null) Artwork(Catalog.artistPicture(a.picture, 480), Modifier.fillMaxWidth().height(200.dp), RoundedCornerShape(0.dp))
                     Text(b, style = MaterialTheme.typography.bodyMedium, color = Aoide.subdued, maxLines = if (moreBio) Int.MAX_VALUE else 4, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(16.dp))
                 }
             }

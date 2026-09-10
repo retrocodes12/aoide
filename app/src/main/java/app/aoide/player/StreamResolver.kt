@@ -4,6 +4,7 @@ import android.net.Uri
 import android.util.Base64
 import app.aoide.data.ApiClient
 import app.aoide.data.Catalog
+import app.aoide.data.Instances
 import app.aoide.data.Quality
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -51,6 +52,7 @@ object StreamResolver {
         synchronized(cache) { cache[key]?.let { return it } }
         val r = try {
             val m = Catalog.manifest(trackId, quality)
+            if (m.manifest.isBlank()) throw IllegalStateException("No manifest from mirror")
             val decoded = runCatching { String(Base64.decode(m.manifest, Base64.DEFAULT)) }.getOrDefault(m.manifest)
             val isPreview = m.assetPresentation.equals("PREVIEW", true)
             val info = StreamInfo(trackId, isPreview, m.audioQuality, m.bitDepth, m.sampleRate, "mirror")
@@ -58,10 +60,20 @@ object StreamResolver {
                 decoded.contains("<MPD") -> Uri.parse("data:application/dash+xml;base64," + Base64.encodeToString(decoded.toByteArray(), Base64.NO_WRAP))
                 else -> Uri.parse(directUrl(decoded) ?: throw IllegalStateException("Unreadable manifest"))
             }
+            Instances.noteSource("mirror")
             Resolved(uri, info)
         } catch (e: Exception) {
-            val n = ApiClient.nativeManifest(trackId)
-            Resolved(Uri.parse(n.uri), StreamInfo(trackId, n.trackPresentation.equals("PREVIEW", true), n.formats.firstOrNull() ?: quality.name, null, null, "tidal"))
+            val n = ApiClient.nativeManifest(trackId, quality)
+            Instances.noteSource("tidal")
+            val fmt = n.formats.firstOrNull() ?: quality.name
+            // Report the tier that was actually granted; TIDAL honours the format order but a track may lack a tier.
+            val tier = when {
+                fmt == "FLAC" -> "LOSSLESS"
+                fmt.startsWith("HEAAC") -> "LOW"
+                fmt.startsWith("AAC") -> "HIGH"
+                else -> fmt
+            }
+            Resolved(Uri.parse(n.uri), StreamInfo(trackId, n.trackPresentation.equals("PREVIEW", true), tier, null, null, "tidal"))
         }
         synchronized(cache) { cache[key] = r }
         _infos.value = _infos.value + (trackId to r.info)
@@ -78,4 +90,7 @@ object StreamResolver {
     }
 
     fun forget(trackId: Long) = synchronized(cache) { cache.keys.removeAll { it.startsWith("$trackId:") } }
+
+    /** Test seam: lets a screenshot test show a preview badge without resolving a stream. */
+    fun setInfoForTest(info: StreamInfo) { _infos.value = _infos.value + (info.trackId to info) }
 }

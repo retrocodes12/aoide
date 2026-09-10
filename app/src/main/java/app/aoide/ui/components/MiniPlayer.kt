@@ -15,6 +15,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.SkipNext
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -39,18 +40,24 @@ import app.aoide.player.Status
 import app.aoide.player.StreamResolver
 import app.aoide.ui.AppUi
 import app.aoide.ui.theme.Aoide
+import app.aoide.ui.theme.Tint
 
-/** Floating capsule above the tab bar: Apple's shape, tinted like the record, Spotify's hairline progress. */
+/**
+ * Floating capsule above the tab bar: Apple's shape, tinted like the playing record, Spotify's
+ * hairline progress. The tint sits under a 60% black scrim, so white text clears AA on the
+ * brightest cover; nothing on it is ever orange, which measured under 2:1 on red records.
+ */
 @Composable
-fun MiniPlayer(tint: Color) {
+fun MiniPlayer(tint: Tint) {
     val s by PlayerController.state.collectAsState()
     val infos by StreamResolver.infos.collectAsState()
     val t = s.current ?: return
     val info = infos[t.id]
+    val failed = s.status == Status.ERROR
     val progress = if (s.durationMs > 0) (s.positionMs.toFloat() / s.durationMs).coerceIn(0f, 1f) else 0f
     Column(
         Modifier.padding(horizontal = 10.dp).fillMaxWidth().shadow(18.dp, RoundedCornerShape(12.dp), clip = false, ambientColor = Color.Black, spotColor = Color.Black)
-            .clip(RoundedCornerShape(12.dp)).background(tint).background(Color.Black.copy(alpha = .5f))
+            .clip(RoundedCornerShape(12.dp)).background(tint.accent).background(Color.Black.copy(alpha = .6f))
             .clickable { AppUi.nowPlayingOpen = true }.testTag("mini_player"),
     ) {
         Row(Modifier.padding(start = 8.dp, top = 8.dp, bottom = 8.dp, end = 2.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -60,16 +67,17 @@ fun MiniPlayer(tint: Color) {
                 Text(t.title, style = MaterialTheme.typography.titleSmall, color = Aoide.fg, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.testTag("mini_title"))
                 Text(
                     when {
-                        s.status == Status.ERROR -> s.error ?: "Playback failed"
+                        failed -> s.error ?: "Couldn't play this song"
                         s.status == Status.LOADING -> "Loading…"
                         info?.isPreview == true -> "${t.artistNames} · Preview"
                         else -> t.artistNames
                     },
-                    style = MaterialTheme.typography.bodySmall, color = if (info?.isPreview == true) Aoide.accent else Aoide.fg.copy(alpha = .75f), maxLines = 1, overflow = TextOverflow.Ellipsis,
+                    style = MaterialTheme.typography.bodySmall, color = if (failed) Color.White else Color.White.copy(alpha = .84f), maxLines = 1, overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.testTag("mini_sub"),
                 )
             }
-            IconButton(onClick = { PlayerController.toggle() }, modifier = Modifier.semantics { contentDescription = if (s.isPlaying) "Pause" else "Play" }.testTag("mini_toggle")) {
-                Icon(if (s.isPlaying) Icons.Filled.Pause else Icons.Filled.PlayArrow, null, tint = Aoide.fg, modifier = Modifier.size(28.dp))
+            IconButton(onClick = { PlayerController.toggle() }, modifier = Modifier.semantics { contentDescription = if (failed) "Retry" else if (s.isPlaying) "Pause" else "Play" }.testTag("mini_toggle")) {
+                Icon(if (failed) Icons.Filled.Refresh else if (s.isPlaying) Icons.Filled.Pause else Icons.Filled.PlayArrow, null, tint = Aoide.fg, modifier = Modifier.size(28.dp))
             }
             IconButton(onClick = { PlayerController.next() }, modifier = Modifier.semantics { contentDescription = "Next" }.testTag("mini_next")) {
                 Icon(Icons.Filled.SkipNext, null, tint = Aoide.fg, modifier = Modifier.size(26.dp))

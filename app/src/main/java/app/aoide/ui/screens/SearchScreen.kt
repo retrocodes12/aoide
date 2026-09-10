@@ -55,6 +55,9 @@ import app.aoide.data.SearchAll
 import app.aoide.data.Track
 import app.aoide.player.PlayerController
 import app.aoide.ui.Resource
+import app.aoide.ui.plural
+import app.aoide.ui.reload
+import androidx.compose.runtime.remember
 import app.aoide.ui.components.Artwork
 import app.aoide.ui.components.Chip
 import app.aoide.ui.components.EmptyState
@@ -63,7 +66,6 @@ import app.aoide.ui.components.SectionTitle
 import app.aoide.ui.components.SkeletonRows
 import app.aoide.ui.components.TrackRow
 import app.aoide.ui.rememberResource
-import app.aoide.ui.reload
 import app.aoide.ui.theme.Aoide
 import kotlinx.coroutines.delay
 
@@ -146,6 +148,7 @@ fun SearchScreen(initialQuery: String?, onNavigate: (String) -> Unit) {
 private fun Results(term: String, tab: Tab, setTab: (Tab) -> Unit, onNavigate: (String) -> Unit) {
     val all by rememberResource("all", term) { Catalog.searchAll(term, 12) }
     val songs by rememberResource("songs", term, tab == Tab.SONGS) { Catalog.searchTracks(term, if (tab == Tab.SONGS) 50 else 8).items }
+    var retried by remember(term) { mutableStateOf(false) }
     LazyColumn(Modifier.testTag("results")) {
         item {
             LazyRow(contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 16.dp, vertical = 8.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -158,7 +161,14 @@ private fun Results(term: String, tab: Tab, setTab: (Tab) -> Unit, onNavigate: (
             item { ErrorState(a.error) { a.reload() } }
             return@LazyColumn
         }
-        val nothing = a is Resource.Ready && s is Resource.Ready && s.value.isEmpty() && (a.value.artists?.items.isNullOrEmpty()) && (a.value.albums?.items.isNullOrEmpty()) && (a.value.playlists?.items.isNullOrEmpty())
+        val emptyAnswer = a is Resource.Ready && s is Resource.Ready && s.value.isEmpty() && (a.value.artists?.items.isNullOrEmpty()) && (a.value.albums?.items.isNullOrEmpty()) && (a.value.playlists?.items.isNullOrEmpty())
+        // A cold mirror can answer the very first query with an empty list. Ask once more before calling it a miss.
+        if (emptyAnswer && !retried) {
+            item { SkeletonRows(4) }
+            item { LaunchedEffect(term) { delay(700); retried = true; a.reload(); s.reload() } }
+            return@LazyColumn
+        }
+        val nothing = emptyAnswer && retried
         if (nothing) {
             item { EmptyState("No results found for \"$term\"", "Check the spelling, or try fewer or different words.") }
             return@LazyColumn
@@ -202,7 +212,7 @@ private fun Results(term: String, tab: Tab, setTab: (Tab) -> Unit, onNavigate: (
             if ((tab == Tab.ALL || tab == Tab.PLAYLISTS) && playlists.isNotEmpty()) {
                 item { SectionTitle("Playlists") }
                 items(playlists.take(if (tab == Tab.PLAYLISTS) 30 else 4), key = { "pl${it.uuid}" }) { p ->
-                    ResultRow(Catalog.playlistImage(p, 160), p.title, "Playlist" + (p.numberOfTracks?.let { " · $it songs" } ?: "")) { onNavigate("playlist/${p.uuid}") }
+                    ResultRow(Catalog.playlistImage(p, 160), p.title, "Playlist" + (p.numberOfTracks?.let { " · ${plural(it, "song")}" } ?: "")) { onNavigate("playlist/${p.uuid}") }
                 }
             }
         } else if (a is Resource.Loading && tab != Tab.SONGS) {

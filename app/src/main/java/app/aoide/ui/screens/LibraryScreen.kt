@@ -43,6 +43,10 @@ import androidx.compose.ui.unit.dp
 import app.aoide.data.Catalog
 import app.aoide.data.Library
 import app.aoide.ui.Toasts
+import app.aoide.ui.plural
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.ui.text.input.ImeAction
 import app.aoide.ui.components.Artwork
 import app.aoide.ui.components.Chip
 import app.aoide.ui.components.EmptyState
@@ -59,9 +63,9 @@ fun LibraryScreen(onNavigate: (String) -> Unit) {
     data class Row(val key: String, val image: String?, val title: String, val sub: String, val round: Boolean = false, val liked: Boolean = false, val route: String)
     val rows = buildList {
         if (filter == Filter.ALL || filter == Filter.PLAYLISTS) {
-            add(Row("liked", null, "Liked Songs", "Playlist · ${lib.liked.size} songs", liked = true, route = "liked"))
-            lib.playlists.forEach { add(Row(it.id, Catalog.cover(it.tracks.firstOrNull()?.album?.cover, 160), it.title, "Playlist · ${it.tracks.size} songs", route = "local/${it.id}")) }
-            lib.followedPlaylists.forEach { add(Row(it.uuid, Catalog.playlistImage(it, 160), it.title, "Playlist" + (it.numberOfTracks?.let { n -> " · $n songs" } ?: ""), route = "playlist/${it.uuid}")) }
+            add(Row("liked", null, "Liked Songs", "Playlist · ${plural(lib.liked.size, "song")}", liked = true, route = "liked"))
+            lib.playlists.forEach { add(Row(it.id, Catalog.cover(it.tracks.firstOrNull()?.album?.cover, 160), it.title, "Playlist · ${plural(it.tracks.size, "song")}", route = "local/${it.id}")) }
+            lib.followedPlaylists.forEach { add(Row(it.uuid, Catalog.playlistImage(it, 160), it.title, "Playlist" + (it.numberOfTracks?.let { n -> " · ${plural(n, "song")}" } ?: ""), route = "playlist/${it.uuid}")) }
         }
         if (filter == Filter.ALL || filter == Filter.ALBUMS) lib.albums.forEach { add(Row("a${it.id}", Catalog.cover(it.cover, 160), it.title, "Album · ${it.primaryArtist?.name ?: ""}", route = "album/${it.id}")) }
         if (filter == Filter.ALL || filter == Filter.ARTISTS) lib.artists.forEach { add(Row("r${it.id}", Catalog.artistPicture(it.picture, 160), it.name, "Artist", round = true, route = "artist/${it.id}")) }
@@ -94,9 +98,10 @@ fun LibraryScreen(onNavigate: (String) -> Unit) {
     }
     if (creating) {
         var name by remember { mutableStateOf("My Playlist #${lib.playlists.size + 1}") }
+        val create = { val p = Library.createPlaylist(name); creating = false; Toasts.show("Created ${p.title}"); onNavigate("local/${p.id}") }
         AlertDialog(onDismissRequest = { creating = false }, containerColor = Aoide.elevated2, title = { Text("Give your playlist a name") },
-            text = { OutlinedTextField(name, { name = it }, singleLine = true, modifier = Modifier.testTag("playlist_name")) },
-            confirmButton = { TextButton(onClick = { val p = Library.createPlaylist(name); creating = false; Toasts.show("Created ${p.title}"); onNavigate("local/${p.id}") }, modifier = Modifier.testTag("playlist_create")) { Text("Create", color = Aoide.accent) } },
+            text = { OutlinedTextField(name, { name = it }, singleLine = true, keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done), keyboardActions = KeyboardActions(onDone = { create() }), modifier = Modifier.testTag("playlist_name")) },
+            confirmButton = { TextButton(onClick = create, modifier = Modifier.testTag("playlist_create")) { Text("Create", color = Aoide.accent) } },
             dismissButton = { TextButton(onClick = { creating = false }) { Text("Cancel", color = Aoide.subdued) } })
     }
 }

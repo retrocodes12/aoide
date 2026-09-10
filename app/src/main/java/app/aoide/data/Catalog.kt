@@ -1,6 +1,8 @@
 package app.aoide.data
 
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.JsonObject
@@ -31,8 +33,21 @@ object Catalog {
     suspend fun searchTracks(term: String, limit: Int = 25, offset: Int = 0): Paged<Track> =
         json.decodeFromString<DataWrap<Paged<Track>>>(ApiClient.get("/search/?s=${enc(term)}&limit=$limit&offset=$offset")).data
 
-    suspend fun searchAll(term: String, limit: Int = 12): SearchAll =
-        json.decodeFromString<DataWrap<SearchAll>>(ApiClient.get("/search/?a=${enc(term)}&limit=$limit")).data
+    /**
+     * On a hifi-api mirror `a=` answers with artists, tracks and top hits only; albums and playlists
+     * have their own parameters. Ask for all three at once and merge, so the Albums and Playlists
+     * tabs are never empty just because a mirror is serving instead of the fallback.
+     */
+    suspend fun searchAll(term: String, limit: Int = 12): SearchAll = coroutineScope {
+        val main = async { json.decodeFromString<DataWrap<SearchAll>>(ApiClient.get("/search/?a=${enc(term)}&limit=$limit")).data }
+        val albums = async { runCatching { json.decodeFromString<DataWrap<SearchAll>>(ApiClient.get("/search/?al=${enc(term)}&limit=$limit")).data.albums }.getOrNull() }
+        val playlists = async { runCatching { json.decodeFromString<DataWrap<SearchAll>>(ApiClient.get("/search/?p=${enc(term)}&limit=$limit")).data.playlists }.getOrNull() }
+        val m = main.await()
+        m.copy(
+            albums = if (m.albums?.items.isNullOrEmpty()) albums.await() ?: m.albums else m.albums,
+            playlists = if (m.playlists?.items.isNullOrEmpty()) playlists.await() ?: m.playlists else m.playlists,
+        )
+    }
 
     suspend fun searchPlaylists(term: String, limit: Int = 25): List<Playlist> =
         json.decodeFromString<DataWrap<SearchAll>>(ApiClient.get("/search/?p=${enc(term)}&limit=$limit")).data.playlists?.items ?: emptyList()
@@ -129,11 +144,13 @@ object Catalog {
         val full = "artist_name=${enc(artist)}&track_name=${enc(t.title)}" + (t.album?.let { "&album_name=${enc(it.title)}" } ?: "") + "&duration=${t.duration}"
         val r = call(full) ?: call("artist_name=${enc(artist)}&track_name=${enc(t.title)}") ?: return@withContext null
         if (r.instrumental) return@withContext Lyrics("Instrumental", null)
+        // LRC files open with metadata tags ([ar:], [ti:], [by:] ...); those are not lyrics.
+        val plain = r.plainLyrics?.lines()?.filterNot { Regex("^\\[[a-z]{2,}:.*]\\s*$", RegexOption.IGNORE_CASE).matches(it) }?.joinToString("\n")?.trim()?.ifBlank { null }
         val synced = r.syncedLyrics?.lines()?.mapNotNull { line ->
             Regex("^\\[(\\d+):(\\d+(?:\\.\\d+)?)](.*)$").find(line)?.let { m ->
                 LyricLine(m.groupValues[1].toDouble() * 60 + m.groupValues[2].toDouble(), m.groupValues[3].trim())
             }
         }?.takeIf { it.isNotEmpty() }
-        if (r.plainLyrics == null && synced == null) null else Lyrics(r.plainLyrics, synced)
+        if (plain == null && synced == null) null else Lyrics(plain, synced)
     }
 }

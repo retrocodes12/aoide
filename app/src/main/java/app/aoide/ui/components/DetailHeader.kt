@@ -17,12 +17,11 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.MoreVert
+import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Shuffle
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -39,15 +38,17 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import app.aoide.ui.theme.Aoide
+import app.aoide.ui.theme.Tint
 
 /**
  * Album / playlist header: Spotify's tinted ground, Apple Music's composition. Artwork centred
  * with a deep soft shadow, title and artist centred under it, then Play and Shuffle as a pair of
- * wide pills. The small actions (save, more) sit on their own quiet row.
+ * wide pills. The tint lives behind the artwork; by the title the ground has taken over, so white
+ * and orange text sit on near-black whatever the record's colour.
  */
 @Composable
 fun DetailHeader(
-    tint: Color,
+    tint: Tint,
     image: String?,
     title: String,
     round: Boolean = false,
@@ -64,12 +65,12 @@ fun DetailHeader(
     onMore: (() -> Unit)? = null,
 ) {
     val shape = if (round) CircleShape else RoundedCornerShape(10.dp)
-    Column(Modifier.fillMaxWidth().background(Brush.verticalGradient(listOf(tint, Aoide.ground), endY = 1100f))) {
-        Row(Modifier.statusBarsPadding().fillMaxWidth().padding(horizontal = 4.dp), verticalAlignment = Alignment.CenterVertically) {
-            IconButton(onClick = onBack, modifier = Modifier.semantics { contentDescription = "Back" }.testTag("back")) { Icon(Icons.AutoMirrored.Filled.ArrowBack, null, tint = Aoide.fg) }
+    Column(Modifier.fillMaxWidth().background(Brush.verticalGradient(0f to tint.accent, 0.64f to Aoide.ground, 1f to Aoide.ground, endY = 1100f))) {
+        Row(Modifier.statusBarsPadding().fillMaxWidth().padding(horizontal = 10.dp, vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
+            IconDisc(Icons.AutoMirrored.Filled.ArrowBack, "Back", Modifier.testTag("back"), onClick = onBack)
             Spacer(Modifier.weight(1f))
             leftActions()
-            if (onMore != null) IconButton(onClick = onMore, modifier = Modifier.semantics { contentDescription = "More options" }) { Icon(Icons.Filled.MoreVert, null, tint = Aoide.fg) }
+            if (onMore != null) IconDisc(Icons.Filled.MoreVert, "More options", Modifier.padding(start = 8.dp), onClick = onMore)
         }
         Box(Modifier.fillMaxWidth().padding(top = 4.dp), contentAlignment = Alignment.Center) {
             Artwork(image, Modifier.size(248.dp).shadow(28.dp, shape, clip = false, ambientColor = Color.Black, spotColor = Color.Black), shape = shape, contentDescription = title)
@@ -79,7 +80,7 @@ fun DetailHeader(
             if (artist != null) Box(Modifier.padding(top = 4.dp)) { artist() }
             Row(Modifier.padding(top = 6.dp), verticalAlignment = Alignment.CenterVertically) {
                 Text(meta, style = MaterialTheme.typography.bodySmall, color = Aoide.subdued, textAlign = TextAlign.Center)
-                if (badge != null) { Spacer(Modifier.width(8.dp)); QualityBadge(badge) }
+                if (badge != null) { Spacer(Modifier.width(8.dp)); QualityBadge(badge, onDark = true) }
             }
             if (!description.isNullOrBlank()) Text(description, style = MaterialTheme.typography.bodySmall, color = Aoide.subdued, maxLines = 3, overflow = TextOverflow.Ellipsis, textAlign = TextAlign.Center, modifier = Modifier.padding(top = 8.dp))
         }
@@ -90,14 +91,21 @@ fun DetailHeader(
     }
 }
 
-/** Apple Music's wide pill: filled orange for the primary, translucent for the secondary. */
+/** Apple Music's wide pill: filled orange for the primary, translucent for the secondary. Disabled pills go neutral, never dark orange. */
 @Composable
 fun PillButton(text: String, icon: androidx.compose.ui.graphics.vector.ImageVector, filled: Boolean, enabled: Boolean = true, modifier: Modifier = Modifier, onClick: () -> Unit) {
-    val bg = if (filled) Aoide.accent else Aoide.highlight
-    val fg = if (filled) Aoide.accentInk else Aoide.accent
+    val bg = when {
+        !enabled -> if (filled) Aoide.elevated2 else Aoide.highlight
+        filled -> Aoide.accent
+        else -> Aoide.highlight
+    }
+    val fg = when {
+        !enabled -> Aoide.subdued
+        filled -> Aoide.accentInk
+        else -> Aoide.accent
+    }
     Row(
-        modifier.height(46.dp).clip(RoundedCornerShape(10.dp)).background(if (enabled) bg else bg.copy(alpha = .35f)).clickable(enabled = enabled, onClick = onClick)
-            .semantics { contentDescription = text },
+        modifier.height(46.dp).clip(RoundedCornerShape(10.dp)).background(bg).clickable(enabled = enabled, onClick = onClick).semantics { contentDescription = text },
         horizontalArrangement = Arrangement.Center, verticalAlignment = Alignment.CenterVertically,
     ) {
         Icon(icon, null, tint = fg, modifier = Modifier.size(20.dp))
@@ -106,11 +114,21 @@ fun PillButton(text: String, icon: androidx.compose.ui.graphics.vector.ImageVect
     }
 }
 
-/** "Lossless" / "Hi-Res" tag, in the shape Apple Music uses. */
+/** "Lossless" / "Hi-Res" tag, in the shape Apple Music uses. [onDark] gives it its own ground for tinted surfaces. */
 @Composable
-fun QualityBadge(text: String, modifier: Modifier = Modifier) {
-    Box(modifier.clip(RoundedCornerShape(3.dp)).background(Aoide.subdued.copy(alpha = .22f)).padding(horizontal = 5.dp, vertical = 1.dp)) {
-        Text(text.uppercase(), style = MaterialTheme.typography.labelSmall.copy(letterSpacing = 0.6.sp), color = Aoide.subdued)
+fun QualityBadge(text: String, modifier: Modifier = Modifier, onDark: Boolean = false, accent: Boolean = false) {
+    val bg = when {
+        accent -> Aoide.accent.copy(alpha = .2f)
+        onDark -> Color.Black.copy(alpha = .35f)
+        else -> Aoide.subdued.copy(alpha = .22f)
+    }
+    val fg = when {
+        accent -> Aoide.accent
+        onDark -> Aoide.fg
+        else -> Aoide.subdued
+    }
+    Box(modifier.clip(RoundedCornerShape(3.dp)).background(bg).padding(horizontal = 5.dp, vertical = 1.dp)) {
+        Text(text.uppercase(), style = MaterialTheme.typography.labelSmall.copy(letterSpacing = 0.6.sp), color = fg)
     }
 }
 

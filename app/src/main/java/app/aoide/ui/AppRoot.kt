@@ -7,12 +7,18 @@ import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.LibraryMusic
@@ -22,11 +28,11 @@ import androidx.compose.material.icons.outlined.LibraryMusic
 import androidx.compose.material.icons.outlined.Search
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarDefaults
 import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.NavigationBarItemDefaults
-import androidx.compose.material3.Snackbar
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -34,12 +40,14 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.testTagsAsResourceId
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.navigation.NavHostController
 import androidx.navigation.NavType
@@ -48,9 +56,10 @@ import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
+import app.aoide.data.Instances
+import app.aoide.data.Prefs
 import app.aoide.player.PlayerController
 import app.aoide.player.StreamResolver
-import app.aoide.data.Prefs
 import app.aoide.ui.components.MiniPlayer
 import app.aoide.ui.components.TrackMenuSheet
 import app.aoide.ui.screens.AlbumScreen
@@ -86,7 +95,10 @@ fun AppRoot() {
     val previewNoted by Prefs.previewNoted.collectAsState()
     val navigate: (String) -> Unit = { r -> nav.navigate(r) { launchSingleTop = true } }
 
-    // Follow the playing record's tint while the player is open; screens set their own otherwise.
+    LaunchedEffect(Unit) { Instances.probe() }
+    val pending = TestNav.request
+    LaunchedEffect(pending) { if (pending != null) { TestNav.request = null; navigate(pending) } }
+
     val current = player.current
     LaunchedEffect(current?.id, infos[current?.id ?: -1]) {
         val info = current?.let { infos[it.id] }
@@ -109,9 +121,10 @@ fun AppRoot() {
             composable("settings") { SettingsScreen { nav.popBackStack() } }
         }
 
-        // Mini player + tab bar float over the content on a scrim, as Spotify does
-        Column(Modifier.align(Alignment.BottomCenter).fillMaxWidth().background(Brush.verticalGradient(listOf(Color.Transparent, Aoide.base.copy(alpha = .9f), Aoide.base), endY = 320f))) {
-            if (player.current != null) MiniPlayer(AppUi.tint)
+        // Mini player + tab bar float over the content on a tall fade, so rows are not sliced mid-height where they pass under
+        Column(Modifier.align(Alignment.BottomCenter).fillMaxWidth().background(Brush.verticalGradient(listOf(Color.Transparent, Aoide.ground.copy(alpha = .92f), Aoide.base), endY = 360f))) {
+            Spacer(Modifier.height(28.dp))
+            if (player.current != null) MiniPlayer(AppUi.player)
             NavigationBar(containerColor = Color.Transparent, tonalElevation = 0.dp, windowInsets = NavigationBarDefaults.windowInsets, modifier = Modifier.testTag("tab_bar")) {
                 TABS.forEach { t ->
                     val selected = route.startsWith(t.route)
@@ -128,14 +141,31 @@ fun AppRoot() {
         }
 
         AnimatedVisibility(AppUi.nowPlayingOpen, enter = slideInVertically(tween(280)) { it } + fadeIn(), exit = slideOutVertically(tween(220)) { it } + fadeOut()) {
-            NowPlayingScreen(AppUi.tint, navigate)
+            NowPlayingScreen(AppUi.player, navigate)
         }
-        AnimatedVisibility(AppUi.lyricsOpen, enter = slideInVertically(tween(280)) { it }, exit = slideOutVertically(tween(220)) { it }) { LyricsScreen(AppUi.tint) }
+        AnimatedVisibility(AppUi.lyricsOpen, enter = slideInVertically(tween(280)) { it }, exit = slideOutVertically(tween(220)) { it }) { LyricsScreen(AppUi.player) }
         AnimatedVisibility(AppUi.queueOpen, enter = slideInVertically(tween(280)) { it }, exit = slideOutVertically(tween(220)) { it }) { QueueScreen() }
 
         AppUi.menuTrack?.let { t -> TrackMenuSheet(t, AppUi.menuRemove, { r -> AppUi.closeOverlays(); navigate(r) }) { AppUi.menuTrack = null } }
+        AppUi.confirm?.let { c -> ConfirmSheet(c) { AppUi.confirm = null } }
 
-        ToastHost(Modifier.align(Alignment.BottomCenter).padding(bottom = 132.dp).navigationBarsPadding())
+        ToastHost(Modifier.align(Alignment.BottomCenter).padding(bottom = if (AppUi.nowPlayingOpen) 200.dp else 132.dp).navigationBarsPadding())
+    }
+}
+
+/** Bottom-sheet confirmation, so destructive actions never fall back to a system dialog. */
+@OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
+@Composable
+private fun ConfirmSheet(c: Confirm, onDismiss: () -> Unit) {
+    ModalBottomSheet(onDismissRequest = onDismiss, containerColor = Aoide.elevated2, dragHandle = null, modifier = Modifier.testTag("confirm_sheet")) {
+        Column(Modifier.navigationBarsPadding().padding(start = 20.dp, end = 20.dp, top = 22.dp, bottom = 20.dp)) {
+            Text(c.title, style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.ExtraBold))
+            if (c.body != null) Text(c.body, style = MaterialTheme.typography.bodyMedium, color = Aoide.subdued, modifier = Modifier.padding(top = 6.dp))
+            Row(Modifier.fillMaxWidth().padding(top = 18.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                Box(Modifier.weight(1f).height(46.dp).clip(RoundedCornerShape(10.dp)).background(Aoide.highlight).clickable(onClick = onDismiss).testTag("confirm_cancel"), contentAlignment = Alignment.Center) { Text("Cancel", style = MaterialTheme.typography.labelLarge, color = Aoide.fg) }
+                Box(Modifier.weight(1f).height(46.dp).clip(RoundedCornerShape(10.dp)).background(Aoide.accent).clickable { c.onConfirm(); onDismiss() }.testTag("confirm_ok"), contentAlignment = Alignment.Center) { Text(c.action, style = MaterialTheme.typography.labelLarge, color = Aoide.accentInk) }
+            }
+        }
     }
 }
 
@@ -147,8 +177,8 @@ private fun ToastHost(modifier: Modifier) {
         delay(3200)
         if (Toasts.current.value?.first == t.first) Toasts.clear()
     }
-    Box(modifier.padding(horizontal = 24.dp).testTag("toast")) {
-        Snackbar(containerColor = Aoide.accent, contentColor = Aoide.accentInk, shape = MaterialTheme.shapes.small) { Text(t.second, style = MaterialTheme.typography.labelLarge) }
+    Box(modifier.padding(horizontal = 24.dp).clip(RoundedCornerShape(10.dp)).background(Aoide.elevated2).padding(horizontal = 16.dp, vertical = 12.dp).testTag("toast")) {
+        Text(t.second, style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.SemiBold), color = Aoide.fg)
     }
 }
 

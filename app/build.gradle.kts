@@ -3,6 +3,7 @@ plugins {
     id("org.jetbrains.kotlin.android")
     id("org.jetbrains.kotlin.plugin.compose")
     id("org.jetbrains.kotlin.plugin.serialization")
+    id("io.github.takahirom.roborazzi")
 }
 
 /**
@@ -70,6 +71,17 @@ android {
     lint {
         abortOnError = false
     }
+    // Screenshot tests render real Compose on the JVM through Robolectric; no emulator needed.
+    testOptions {
+        unitTests {
+            isIncludeAndroidResources = true
+            all { it.jvmArgs("-Xmx1300m", "-XX:MaxMetaspaceSize=768m", "-XX:ErrorFile=/tmp/aoide_hs_err_%p.log", "-Xss2m"); it.maxHeapSize = "1300m" }
+        }
+    }
+}
+
+roborazzi {
+    outputDir.set(file("build/shots"))
 }
 
 dependencies {
@@ -99,4 +111,16 @@ dependencies {
     implementation("com.squareup.okhttp3:okhttp:4.12.0")
     implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.8.1")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.10.2")
+
+    testImplementation("junit:junit:4.13.2")
+    testImplementation("androidx.test.ext:junit:1.2.1")
+    testImplementation("androidx.test:core-ktx:1.6.1")
+    testImplementation("org.robolectric:robolectric:4.15.1")
+    testImplementation("io.github.takahirom.roborazzi:roborazzi:1.43.1")
+    testImplementation("io.github.takahirom.roborazzi:roborazzi-compose:1.43.1")
+    testImplementation("io.github.takahirom.roborazzi:roborazzi-junit-rule:1.43.1")
+    testImplementation(platform("androidx.compose:compose-bom:2025.06.00"))
+    testImplementation("androidx.compose.ui:ui-test-junit4")
+    testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.10.2")
+    debugImplementation("androidx.compose.ui:ui-test-manifest")
 }
