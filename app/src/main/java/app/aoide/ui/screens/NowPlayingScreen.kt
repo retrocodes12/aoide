@@ -1,3 +1,5 @@
+@file:OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
+
 package app.aoide.ui.screens
 
 import androidx.activity.compose.BackHandler
@@ -167,10 +169,14 @@ fun NowPlayingScreen(tint: Tint, onNavigate: (String) -> Unit) {
             val known = s.durationMs > 0 && !failed
             val dur = s.durationMs.coerceAtLeast(1L)
             val pos = scrub ?: (if (known) (s.positionMs.toFloat() / dur).coerceIn(0f, 1f) else 0f)
+            val sliderColors = SliderDefaults.colors(thumbColor = Aoide.fg, activeTrackColor = Aoide.fg.copy(alpha = .92f), inactiveTrackColor = Color.White.copy(alpha = .25f), disabledThumbColor = Aoide.fg.copy(alpha = .45f), disabledActiveTrackColor = Aoide.fg.copy(alpha = .35f), disabledInactiveTrackColor = Color.White.copy(alpha = .18f))
+            val interaction = remember { androidx.compose.foundation.interaction.MutableInteractionSource() }
             Slider(
                 value = pos, onValueChange = { if (known) scrub = it }, onValueChangeFinished = { scrub?.let { PlayerController.seekTo((it * dur).toLong()) }; scrub = null },
-                enabled = known,
-                colors = SliderDefaults.colors(thumbColor = Aoide.fg, activeTrackColor = Aoide.fg.copy(alpha = .9f), inactiveTrackColor = Color.White.copy(alpha = .25f), disabledThumbColor = Aoide.fg.copy(alpha = .45f), disabledInactiveTrackColor = Color.White.copy(alpha = .18f)),
+                enabled = known, interactionSource = interaction, colors = sliderColors,
+                // Spotify's hairline: a 4 dp track with no gap and a small round thumb, not Material's chunky expressive bar.
+                track = { state -> SliderDefaults.Track(sliderState = state, colors = sliderColors, enabled = known, thumbTrackGapSize = 0.dp, trackInsideCornerSize = 2.dp, drawStopIndicator = null, modifier = Modifier.height(4.dp)) },
+                thumb = { SliderDefaults.Thumb(interactionSource = interaction, colors = sliderColors, enabled = known, thumbSize = androidx.compose.ui.unit.DpSize(12.dp, 12.dp)) },
                 modifier = Modifier.padding(horizontal = 16.dp).semantics { contentDescription = "Seek" }.testTag("np_seek"),
             )
             Row(Modifier.padding(horizontal = 26.dp).fillMaxWidth()) {

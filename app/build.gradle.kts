@@ -75,7 +75,7 @@ android {
     testOptions {
         unitTests {
             isIncludeAndroidResources = true
-            all { it.jvmArgs("-Xmx1300m", "-XX:MaxMetaspaceSize=768m", "-XX:ErrorFile=/tmp/aoide_hs_err_%p.log", "-Xss2m"); it.maxHeapSize = "1300m" }
+            all { it.jvmArgs("-Xmx1300m", "-XX:MaxMetaspaceSize=768m", "-XX:ErrorFile=/tmp/aoide_hs_err_%p.log", "-Xss2m"); it.maxHeapSize = "1300m"; it.setForkEvery(1) }
         }
     }
 }

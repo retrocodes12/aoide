@@ -57,13 +57,18 @@ import coil3.compose.AsyncImage
 import coil3.request.ImageRequest
 import coil3.request.crossfade
 
+/** Rendering knobs a screenshot test can turn: the crossfade needs a running clock, which a JVM render does not have. */
+object ArtworkConfig {
+    var crossfadeMs: Int = 150
+}
+
 /** Album / artist / playlist artwork with a quiet placeholder. */
 @Composable
 fun Artwork(url: String?, modifier: Modifier = Modifier, shape: Shape = RoundedCornerShape(4.dp), contentDescription: String? = null) {
     Box(modifier.clip(shape).background(Aoide.elevated2)) {
         if (url != null) {
             AsyncImage(
-                model = ImageRequest.Builder(androidx.compose.ui.platform.LocalContext.current).data(url).crossfade(150).build(),
+                model = ImageRequest.Builder(androidx.compose.ui.platform.LocalContext.current).data(url).let { if (ArtworkConfig.crossfadeMs > 0) it.crossfade(ArtworkConfig.crossfadeMs) else it.crossfade(false) }.build(),
                 contentDescription = contentDescription,
                 contentScale = androidx.compose.ui.layout.ContentScale.Crop,
                 modifier = Modifier.matchParentSize(),

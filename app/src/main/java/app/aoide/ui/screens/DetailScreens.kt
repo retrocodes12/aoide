@@ -89,7 +89,7 @@ import app.aoide.ui.reload
 import app.aoide.ui.rememberResource
 import app.aoide.ui.theme.Aoide
 import app.aoide.ui.theme.Tint
-import coil3.ImageLoader
+import coil3.SingletonImageLoader
 import coil3.request.ImageRequest
 import coil3.request.allowHardware
 import coil3.toBitmap
@@ -105,7 +105,7 @@ fun rememberImageTint(url: String?, fallback: Tint): Tint {
         if (url == null) return@LaunchedEffect
         val c = withContext(Dispatchers.IO) {
             runCatching {
-                val result = ImageLoader(ctx).execute(ImageRequest.Builder(ctx).data(url).allowHardware(false).size(96).build())
+                val result = SingletonImageLoader.get(ctx).execute(ImageRequest.Builder(ctx).data(url).allowHardware(false).size(96).build())
                 val bmp = result.image?.toBitmap() ?: return@runCatching null
                 val p = Palette.from(bmp).generate()
                 (p.vibrantSwatch ?: p.darkVibrantSwatch ?: p.lightVibrantSwatch ?: p.mutedSwatch ?: p.dominantSwatch)?.rgb?.let { Color(it) }

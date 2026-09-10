@@ -74,7 +74,10 @@ private val scheme = darkColorScheme(
 @Composable
 fun AoideTheme(content: @Composable () -> Unit) {
     isSystemInDarkTheme() // always dark, by design
-    MaterialTheme(colorScheme = scheme, typography = AoideTypography, content = content)
+    MaterialTheme(colorScheme = scheme, typography = AoideTypography) {
+        // Text without an explicit colour reads LocalContentColor, which only a Surface sets; pin it to the app's ink.
+        androidx.compose.runtime.CompositionLocalProvider(androidx.compose.material3.LocalContentColor provides Aoide.fg, content = content)
+    }
 }
 
 /** Parse "#rrggbb" from the catalogue into a header tint. Prefer [Tint.of] when the ink matters too. */

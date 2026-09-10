@@ -6,6 +6,7 @@ import androidx.compose.ui.test.onAllNodesWithTag
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onRoot
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performImeAction
 import androidx.compose.ui.test.performTextInput
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import app.aoide.data.Catalog
@@ -20,6 +21,7 @@ import app.aoide.player.Status
 import app.aoide.ui.AppRoot
 import app.aoide.ui.AppUi
 import app.aoide.ui.TestNav
+import app.aoide.ui.Toasts
 import app.aoide.ui.theme.AoideTheme
 import com.github.takahirom.roborazzi.RobolectricDeviceQualifiers
 import com.github.takahirom.roborazzi.captureRoboImage
@@ -46,6 +48,7 @@ class Shots {
     val rule = createComposeRule()
 
     private fun shot(name: String) {
+        Toasts.clear()
         settle()
         rule.onRoot().captureRoboImage("build/shots/$name.png")
     }
@@ -68,13 +71,34 @@ class Shots {
             if (runCatching(cond).getOrDefault(false)) return
             Thread.sleep(200)
         }
+        runCatching { rule.onRoot().captureRoboImage("build/shots/zz-timeout-${System.currentTimeMillis()}.png") }
         throw AssertionError("timed out waiting")
     }
 
     private fun has(tag: String) = rule.onAllNodesWithTag(tag).fetchSemanticsNodes().isNotEmpty()
 
     private fun launch() {
+        // Robolectric's native graphics runtime must come up on the test thread before any image-decoding worker
+        // thread touches it; otherwise its JNI bootstrap fails with "Class not found: java/nio/IntBuffer" and aborts.
+        val warm = android.graphics.Bitmap.createBitmap(2, 2, android.graphics.Bitmap.Config.ARGB_8888)
+        android.graphics.Canvas(warm).drawColor(0xFF000000.toInt())
+        android.graphics.Paint().apply { typeface = android.graphics.Typeface.DEFAULT_BOLD }.measureText("Aoide")
+        val png = java.io.ByteArrayOutputStream().also { warm.compress(android.graphics.Bitmap.CompressFormat.PNG, 100, it) }.toByteArray()
+        android.graphics.BitmapFactory.decodeByteArray(png, 0, png.size)
+        // Decode artwork on the main thread: a decode on a worker thread is what trips the native runtime's JNI bootstrap.
+        coil3.SingletonImageLoader.setSafe { c ->
+            coil3.ImageLoader.Builder(c)
+                .decoderCoroutineContext(kotlinx.coroutines.Dispatchers.Main.immediate)
+                .eventListener(object : coil3.EventListener() {
+                    override fun onError(request: coil3.request.ImageRequest, result: coil3.request.ErrorResult) { println("COIL-ERROR ${request.data} -> ${result.throwable}") }
+                    override fun onSuccess(request: coil3.request.ImageRequest, result: coil3.request.SuccessResult) { println("COIL-OK ${request.data} ${result.image.width}x${result.image.height}") }
+                })
+                .build()
+        }
+        app.aoide.ui.components.ArtworkConfig.crossfadeMs = 0
         AppUi.closeOverlays()
+        PlayerController.setStateForTest(PlayerUiState())
+        Toasts.clear()
         rule.setContent { AoideTheme { AppRoot() } }
         settle(300)
     }
@@ -93,7 +117,9 @@ class Shots {
     @Test fun searchResults() {
         launch(); rule.onNodeWithTag("tab_search").performClick(); await { has("search_field") }
         rule.onNodeWithTag("search_field").performTextInput("radiohead")
-        await { has("track_row") }; settle(2500); shot("03-search-results")
+        settle(600)
+        rule.onNodeWithTag("search_field").performImeAction()
+        await(60_000) { has("track_row") || has("top_hit") }; settle(4000); shot("03-search-results")
     }
 
     @Test fun albumPage() {
@@ -102,9 +128,9 @@ class Shots {
         navigate("album/$ALBUM"); await { has("track_row") }; settle(2500); shot("04-album")
     }
 
-    @Test fun artistPage() { launch(); navigate("artist/$ARTIST"); await { has("track_row") }; settle(3500); shot("05-artist") }
+    @Test fun artistPage() { launch(); navigate("artist/$ARTIST"); await { has("track_row") }; settle(8000); shot("05-artist") }
 
-    @Test fun playlistPage() { launch(); navigate("playlist/$PLAYLIST"); await { has("track_row") }; settle(2500); shot("06-playlist") }
+    @Test fun playlistPage() { launch(); navigate("playlist/$PLAYLIST"); await { has("track_row") }; settle(6000); shot("06-playlist") }
 
     @Test fun libraryAndLiked() {
         launch(); val (_, tracks) = album(); Library.toggleLike(tracks[0])
@@ -117,14 +143,14 @@ class Shots {
     @Test fun nowPlaying() {
         launch(); val (a, tracks) = album(); playing(tracks, a.title)
         await { has("mini_player") }; settle(1500); shot("10-mini")
-        AppUi.nowPlayingOpen = true; await { has("now_playing") }; settle(3000); shot("11-now-playing")
+        AppUi.nowPlayingOpen = true; await { has("now_playing") }; settle(7000); shot("11-now-playing")
         AppUi.lyricsOpen = true; await { has("lyrics_screen") }; settle(3000); shot("12-lyrics")
         AppUi.lyricsOpen = false; AppUi.queueOpen = true; await { has("queue_screen") }; settle(800); shot("13-queue")
     }
 
     @Test fun nowPlayingPausedAndError() {
         launch(); val (a, tracks) = album(); playing(tracks, a.title, Status.PAUSED)
-        AppUi.nowPlayingOpen = true; await { has("now_playing") }; settle(2500); shot("14-now-playing-paused")
+        AppUi.nowPlayingOpen = true; await { has("now_playing") }; settle(6000); shot("14-now-playing-paused")
         PlayerController.setStateForTest(PlayerUiState(queue = tracks, index = 0, status = Status.ERROR, error = "Playback isn't working right now. Check your connection, then try again.", context = PlayContext("album", a.title, "album/$ALBUM")))
         await { has("np_error") }; settle(800); shot("15-now-playing-error")
     }
