@@ -30,6 +30,8 @@ interface UIState {
   toast: (text: string) => void
   dismiss: (id: number) => void
   setTintFrom: (hex?: string | null) => void
+  /** The playing song's tint, painted on the mini player, now playing and lyrics regardless of the page. */
+  setPlayerTint: (hex?: string | null) => void
   setTintFromImage: (url: string, fallback?: string | null) => void
   notePreview: () => void
 }
@@ -69,6 +71,14 @@ export const useUI = create<UIState>((set, get) => ({
     root.setProperty('--tint-ink-soft', soft)
     root.setProperty('--tint-ink-faint', faint)
     set({ tint: accent })
+  },
+  setPlayerTint: (hex) => {
+    const { accent, ink, soft, faint } = accentFrom(hex, '#4a4a4a')
+    const root = document.documentElement.style
+    root.setProperty('--np-tint', accent)
+    root.setProperty('--np-ink', ink)
+    root.setProperty('--np-ink-soft', soft)
+    root.setProperty('--np-ink-faint', faint)
   },
   setTintFromImage: (url, fallback) => {
     get().setTintFrom(fallback ?? null)

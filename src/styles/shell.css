@@ -49,7 +49,7 @@ input { font: inherit; }
 .tab.active { color: var(--fg); }
 
 /* ---------- mini player capsule ---------- */
-.mini { position: relative; margin: 0 10px 8px; height: var(--mini-h); border-radius: 12px; overflow: hidden; background: var(--tint); box-shadow: 0 10px 30px rgba(0, 0, 0, .55); display: flex; align-items: center; gap: 10px; padding: 0 4px 0 8px; transition: background var(--dur-slow) var(--ease); }
+.mini { position: relative; margin: 0 10px 8px; height: var(--mini-h); border-radius: 12px; overflow: hidden; background: var(--np-tint); box-shadow: 0 10px 30px rgba(0, 0, 0, .55); display: flex; align-items: center; gap: 10px; padding: 0 4px 0 8px; transition: background var(--dur-slow) var(--ease); }
 .mini::before { content: ""; position: absolute; inset: 0; background: rgba(0, 0, 0, .6); }
 .mini > * { position: relative; }
 .mini__art { width: 42px; height: 42px; border-radius: 6px; object-fit: cover; background: var(--elevated-2); box-shadow: 0 4px 12px rgba(0, 0, 0, .5); flex-shrink: 0; }
@@ -93,8 +93,8 @@ input { font: inherit; }
 .confirm__row { display: flex; gap: 12px; margin-top: 18px; }
 .confirm__row .pill { flex: 1; }
 
-.lyrics .topbar .mini__title, .lyrics .topbar .iconbtn { color: var(--tint-ink); }
-.lyrics .topbar .mini__sub { color: var(--tint-ink-soft); }
+.lyrics .topbar .mini__title, .lyrics .topbar .iconbtn { color: var(--np-ink); }
+.lyrics .topbar .mini__sub { color: var(--np-ink-soft); }
 
 /* ---------- toasts ---------- */
 .toasts { position: absolute; left: 50%; bottom: calc(var(--tabbar-h) + var(--sab) + 16px); transform: translateX(-50%); z-index: 50; pointer-events: none; width: calc(100% - 40px); display: flex; justify-content: center; }

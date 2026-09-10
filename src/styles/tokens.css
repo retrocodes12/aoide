@@ -33,6 +33,11 @@
   --tint-ink: #ffffff;         /* text that reads on --tint; set with it */
   --tint-ink-soft: rgba(255, 255, 255, 0.72);
   --tint-ink-faint: rgba(255, 255, 255, 0.45);
+  /* the playing song's colour, independent of the page you are browsing */
+  --np-tint: #4a4a4a;
+  --np-ink: #F1F0EC;
+  --np-ink-soft: rgba(241, 240, 236, 0.72);
+  --np-ink-faint: rgba(241, 240, 236, 0.45);
 
   --font: 'Figtree', -apple-system, 'SF Pro Text', system-ui, 'Segoe UI', Roboto, sans-serif;
   --radius: 10px;

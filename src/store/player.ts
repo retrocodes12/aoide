@@ -145,7 +145,7 @@ export const usePlayer = create<PlayerState>((set, get) => {
     engineLoaded = false
     set({ index: i, status: 'loading', error: null, position: startAt, duration: 0, stream: null, loaded: false })
     useLibrary.getState().recordPlay(track)
-    useUI.getState().setTintFrom(track.album?.vibrantColor)
+    useUI.getState().setPlayerTint(track.album?.vibrantColor)
     updateMediaSession(track)
     saveSession(true)
     try {
@@ -183,7 +183,7 @@ export const usePlayer = create<PlayerState>((set, get) => {
   if (session) {
     queueMicrotask(() => {
       const t = session.queue[session.index]
-      useUI.getState().setTintFrom(t.album?.vibrantColor)
+      useUI.getState().setPlayerTint(t.album?.vibrantColor)
       updateMediaSession(t)
     })
   }
