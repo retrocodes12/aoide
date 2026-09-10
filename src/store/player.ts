@@ -1,6 +1,6 @@
 import { create } from 'zustand'
 import { getEngine } from '../lib/player/engine'
-import { trackArtists, cover } from '../lib/api/catalog'
+import { msSetHandlers, msSetPosition, msSetState, msSetTrack } from '../lib/mediaSession'
 import type { Quality, ResolvedStream, Track } from '../lib/api/types'
 import { useLibrary } from './library'
 import { useUI } from './ui'
@@ -56,10 +56,20 @@ export const usePlayer = create<PlayerState>((set, get) => {
   const engine = getEngine()
   engine.setVolume(Number.isFinite(savedVol) ? savedVol : 0.8)
 
-  engine.on('time', (position, duration) => set({ position, duration: duration || get().current()?.duration || 0 }))
+  engine.on('time', (position, duration) => {
+    const dur = duration || get().current()?.duration || 0
+    set({ position, duration: dur })
+    const now = Date.now()
+    if (now - lastPosPush > 4000) {
+      lastPosPush = now
+      void msSetPosition(position, dur)
+    }
+  })
   engine.on('state', (s, message) => {
     if (s === 'error') set({ status: 'error', error: message ?? 'Playback failed' })
     else set({ status: s, error: null })
+    if (s === 'playing') void msSetState('playing')
+    else if (s === 'paused') void msSetState('paused')
   })
   engine.on('loaded', (stream) => set({ stream }))
   engine.on('ended', () => {
@@ -96,21 +106,15 @@ export const usePlayer = create<PlayerState>((set, get) => {
     }
   }
 
+  let handlersSet = false
   function updateMediaSession(track: Track) {
-    if (!('mediaSession' in navigator)) return
-    const ms = navigator.mediaSession
-    ms.metadata = new MediaMetadata({
-      title: track.title,
-      artist: trackArtists(track),
-      album: track.album?.title ?? '',
-      artwork: ([160, 320, 640] as const).map((s) => ({ src: cover(track.album?.cover, s) ?? '', sizes: `${s}x${s}`, type: 'image/jpeg' })).filter((a) => a.src),
-    })
-    ms.setActionHandler('play', () => get().toggle())
-    ms.setActionHandler('pause', () => get().toggle())
-    ms.setActionHandler('previoustrack', () => get().prev())
-    ms.setActionHandler('nexttrack', () => get().next())
-    ms.setActionHandler('seekto', (d) => d.seekTime !== undefined && get().seek(d.seekTime))
+    void msSetTrack(track)
+    if (!handlersSet) {
+      handlersSet = true
+      void msSetHandlers({ play: () => get().toggle(), pause: () => get().toggle(), next: () => get().next(), prev: () => get().prev(), seek: (t) => get().seek(t), stop: () => engine.pause() })
+    }
   }
+  let lastPosPush = 0
 
   return {
     queue: [],

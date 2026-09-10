@@ -1,0 +1,55 @@
+name: Android APK
+
+on:
+  push:
+    branches: [main]
+    paths-ignore: ['**.md', 'docs/**']
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  apk:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+      - uses: gradle/actions/setup-gradle@v4
+      - run: npm ci
+      - name: Build web for the app and sync Capacitor
+        run: npm run android:sync
+      - name: Decode signing keystore
+        env:
+          KS_B64: ${{ secrets.AOIDE_KEYSTORE_B64 }}
+        run: printf '%s' "$KS_B64" | base64 -d > "$RUNNER_TEMP/aoide-release.jks"
+      - name: Build release APK
+        working-directory: android
+        env:
+          AOIDE_STORE_PASSWORD: ${{ secrets.AOIDE_STORE_PASSWORD }}
+        run: >
+          ./gradlew assembleRelease --no-daemon --stacktrace
+          "-PaoideKeystore=$RUNNER_TEMP/aoide-release.jks"
+          "-PaoideStorePassword=$AOIDE_STORE_PASSWORD"
+          "-PaoideKeyPassword=$AOIDE_STORE_PASSWORD"
+      - name: Read version
+        id: v
+        run: echo "name=$(node -p "require('./package.json').version")" >> "$GITHUB_OUTPUT"
+      - name: Publish release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          APK=$(find android/app/build/outputs/apk/release -name '*.apk' | head -1)
+          cp "$APK" "Aoide-${{ steps.v.outputs.name }}.apk"
+          cp "$APK" Aoide.apk
+          gh release delete "v${{ steps.v.outputs.name }}" -y --cleanup-tag 2>/dev/null || true
+          gh release create "v${{ steps.v.outputs.name }}" "Aoide-${{ steps.v.outputs.name }}.apk" Aoide.apk \
+            --title "Aoide ${{ steps.v.outputs.name }}" \
+            --notes "Android APK, signed with the Aoide release key so it installs over previous builds. Android 7.0 or newer."
