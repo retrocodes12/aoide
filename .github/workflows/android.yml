@@ -1,9 +1,9 @@
-name: Build APK
+name: Android APK
 
 on:
   push:
     branches: [main]
-    paths-ignore: ['**.md', 'docs/**']
+    paths-ignore: ['**.md', 'docs/**', 'web/**']
   workflow_dispatch:
 
 permissions:
