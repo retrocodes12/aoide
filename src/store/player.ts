@@ -47,10 +47,36 @@ interface PlayerState {
 
 const VOL_KEY = 'aoide:volume'
 const Q_KEY = 'aoide:quality'
+const SESSION_KEY = 'aoide:session:v1'
 const savedVol = Number(localStorage.getItem(VOL_KEY) ?? '0.8')
 const savedQ = (localStorage.getItem(Q_KEY) as Quality | null) ?? 'LOSSLESS'
 
+export type PlayContext = { kind: string; title: string; href?: string }
+
+interface Session {
+  queue: Track[]
+  index: number
+  position: number
+  context: PlayContext | null
+  shuffle: boolean
+  repeat: Repeat
+}
+/** The last queue, paused where it was, so a relaunch comes back on the same song. */
+function readSession(): Session | null {
+  try {
+    const s = JSON.parse(localStorage.getItem(SESSION_KEY) ?? 'null') as Session | null
+    if (!s || !Array.isArray(s.queue) || !s.queue.length || s.index < 0 || s.index >= s.queue.length) return null
+    return s
+  } catch {
+    return null
+  }
+}
+const session = readSession()
+
 let loadAbort: AbortController | null = null
+/** False until the engine actually holds media; a hydrated session starts paused with nothing loaded. */
+let engineLoaded = false
+let lastSave = 0
 
 export const usePlayer = create<PlayerState>((set, get) => {
   const engine = getEngine()
@@ -63,13 +89,17 @@ export const usePlayer = create<PlayerState>((set, get) => {
     if (now - lastPosPush > 4000) {
       lastPosPush = now
       void msSetPosition(position, dur)
+      saveSession()
     }
   })
   engine.on('state', (s, message) => {
     if (s === 'error') set({ status: 'error', error: message ?? 'Playback failed' })
     else set({ status: s, error: null })
     if (s === 'playing') void msSetState('playing')
-    else if (s === 'paused') void msSetState('paused')
+    else if (s === 'paused') {
+      void msSetState('paused')
+      saveSession(true)
+    }
   })
   engine.on('loaded', (stream) => set({ stream }))
   engine.on('ended', () => {
@@ -82,18 +112,35 @@ export const usePlayer = create<PlayerState>((set, get) => {
     get().next()
   })
 
-  async function loadIndex(i: number, autoplay = true) {
+  function saveSession(force = false) {
+    const s = get()
+    const now = Date.now()
+    if (!force && now - lastSave < 4000) return
+    lastSave = now
+    try {
+      if (s.index < 0) localStorage.removeItem(SESSION_KEY)
+      else localStorage.setItem(SESSION_KEY, JSON.stringify({ queue: s.queue.slice(0, 300), index: s.index, position: s.position, context: s.context, shuffle: s.shuffle, repeat: s.repeat } satisfies Session))
+    } catch {
+      /* storage full or unavailable */
+    }
+  }
+
+  async function loadIndex(i: number, autoplay = true, startAt = 0) {
     const { queue, quality } = get()
     const track = queue[i]
     if (!track) return
     loadAbort?.abort()
     loadAbort = new AbortController()
-    set({ index: i, status: 'loading', error: null, position: 0, duration: track.duration, stream: null })
+    engineLoaded = false
+    set({ index: i, status: 'loading', error: null, position: startAt, duration: track.duration, stream: null })
     useLibrary.getState().recordPlay(track)
     useUI.getState().setTintFrom(track.album?.vibrantColor)
     updateMediaSession(track)
+    saveSession(true)
     try {
       const stream = await engine.load(track, quality, autoplay, loadAbort.signal)
+      engineLoaded = true
+      if (startAt > 0) engine.seek(startAt)
       if (stream.isPreview) useUI.getState().notePreview()
     } catch (e) {
       if ((e as Error).name === 'AbortError') return
@@ -116,20 +163,28 @@ export const usePlayer = create<PlayerState>((set, get) => {
   }
   let lastPosPush = 0
 
+  if (session) {
+    queueMicrotask(() => {
+      const t = session.queue[session.index]
+      useUI.getState().setTintFrom(t.album?.vibrantColor)
+      updateMediaSession(t)
+    })
+  }
+
   return {
-    queue: [],
-    index: -1,
-    status: 'idle',
+    queue: session?.queue ?? [],
+    index: session?.index ?? -1,
+    status: session ? 'paused' : 'idle',
     error: null,
-    position: 0,
-    duration: 0,
+    position: session?.position ?? 0,
+    duration: session ? session.queue[session.index].duration : 0,
     volume: Number.isFinite(savedVol) ? savedVol : 0.8,
     muted: false,
-    shuffle: false,
-    repeat: 'off',
+    shuffle: session?.shuffle ?? false,
+    repeat: session?.repeat ?? 'off',
     quality: savedQ,
     stream: null,
-    context: null,
+    context: session?.context ?? null,
     history: [],
 
     current: () => get().queue[get().index] ?? null,
@@ -152,8 +207,9 @@ export const usePlayer = create<PlayerState>((set, get) => {
     playTrack: (track, context) => get().playTracks([track], 0, context ?? { kind: 'track', title: track.title }),
 
     toggle: () => {
-      const { status, index } = get()
+      const { status, index, position } = get()
       if (index < 0) return
+      if (!engineLoaded) return void loadIndex(index, true, position)
       if (status === 'playing' || status === 'buffering') engine.pause()
       else if (status === 'paused') void engine.play()
       else if (status === 'error') void loadIndex(index)
@@ -173,7 +229,9 @@ export const usePlayer = create<PlayerState>((set, get) => {
     seek: (t) => {
       // Never seek past what the media actually holds (previews end at 30 s); a seek past the end wedges the loader.
       const max = engine.duration || get().duration
-      engine.seek(max ? Math.min(t, Math.max(0, max - 1)) : t)
+      const target = max ? Math.min(t, Math.max(0, max - 1)) : t
+      if (!engineLoaded) return set({ position: Math.max(0, target) })
+      engine.seek(target)
     },
     setVolume: (v) => {
       engine.setVolume(v)
@@ -193,8 +251,12 @@ export const usePlayer = create<PlayerState>((set, get) => {
         shuffleInPlace(rest)
         set({ shuffle: true, queue: [cur, ...rest], index: 0 })
       } else set({ shuffle: false })
+      saveSession(true)
     },
-    cycleRepeat: () => set({ repeat: get().repeat === 'off' ? 'all' : get().repeat === 'all' ? 'one' : 'off' }),
+    cycleRepeat: () => {
+      set({ repeat: get().repeat === 'off' ? 'all' : get().repeat === 'all' ? 'one' : 'off' })
+      saveSession(true)
+    },
     setQuality: (q) => {
       localStorage.setItem(Q_KEY, q)
       set({ quality: q })
@@ -210,17 +272,20 @@ export const usePlayer = create<PlayerState>((set, get) => {
       q.splice(index + 1, 0, t)
       set({ queue: q })
       if (index < 0) void loadIndex(0)
+      saveSession(true)
     },
     enqueueLast: (t) => {
       const { queue, index } = get()
       set({ queue: [...queue, t] })
       if (index < 0) void loadIndex(0)
+      saveSession(true)
     },
     removeAt: (i) => {
       const { queue, index } = get()
       if (i === index) return
       const q = queue.filter((_, k) => k !== i)
       set({ queue: q, index: i < index ? index - 1 : index })
+      saveSession(true)
     },
     moveInQueue: (from, to) => {
       const { queue, index } = get()
@@ -232,10 +297,12 @@ export const usePlayer = create<PlayerState>((set, get) => {
       if (from < index && to >= index) idx--
       else if (from > index && to <= index) idx++
       set({ queue: q, index: idx })
+      saveSession(true)
     },
     clearUpcoming: () => {
       const { queue, index } = get()
       set({ queue: queue.slice(0, index + 1) })
+      saveSession(true)
     },
     jumpTo: (i) => void loadIndex(i),
   }

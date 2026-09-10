@@ -69,7 +69,7 @@ export function Settings() {
           <div key={inst.url} className="instance" data-testid="instance_row">
             <div className="instance__main">
               <div className="instance__url">{inst.url.replace(/^https?:\/\//, '')}</div>
-              <div className="instance__tags">{[inst.isUser ? 'yours' : 'public', inst.version && `v${inst.version}`, inst.coolUntil && inst.coolUntil > Date.now() ? 'cooling down' : null, inst.lastLatency ? `${Math.round(inst.lastLatency)} ms` : null].filter(Boolean).join(' · ')}</div>
+              <div className="instance__tags">{[inst.isUser ? 'yours' : 'public', inst.version && inst.version !== 'custom' ? `v${inst.version}` : null, inst.coolUntil && inst.coolUntil > Date.now() ? 'cooling down' : null, inst.lastLatency ? `${Math.round(inst.lastLatency)} ms` : null].filter(Boolean).join(' · ')}</div>
               {st && <div className={`instance__status${st.includes('ms') ? ' is-ok' : ''}`} data-testid="instance_status">{st}</div>}
             </div>
             <button className="pill pill--outline" onClick={() => check(inst)} disabled={checking !== null}>Test</button>

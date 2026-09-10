@@ -36,6 +36,11 @@ export function AlbumPage() {
   const total = tracks.reduce((a, t) => a + t.duration, 0)
   const ctx = { kind: 'album', title: album?.title ?? '', href: `/album/${id}` }
   const thisPlaying = context?.href === ctx.href && (status === 'playing' || status === 'buffering' || status === 'loading')
+  // Apple Music's album view: the artist line only appears when a track's credits differ from the album's.
+  const rowSub = (t: typeof tracks[number]) => {
+    const names = (t.artists?.length ? t.artists : t.artist ? [t.artist] : []).map((a) => a.name)
+    return names.length === 1 && names[0] === artist?.name ? '' : names.join(', ')
+  }
   const badge = album?.mediaMetadata?.tags?.includes('HIRES_LOSSLESS') ? 'Hi-Res Lossless' : album?.audioQuality === 'LOSSLESS' ? 'Lossless' : undefined
   return (
     <div className="page" data-testid="album_screen">
@@ -52,7 +57,7 @@ export function AlbumPage() {
         onShuffle={() => { if (!shuffle) toggleShuffle(); playTracks(tracks, Math.floor(Math.random() * tracks.length), ctx) }}
       />
       <div className="tracks">
-        {res.loading ? <SkeletonRows n={10} art={false} /> : tracks.map((t, i) => <TrackRow key={t.id} track={t} number={i + 1} showArt={false} onPlay={() => playTracks(tracks, i, ctx)} />)}
+        {res.loading ? <SkeletonRows n={10} art={false} /> : tracks.map((t, i) => <TrackRow key={t.id} track={t} number={i + 1} showArt={false} sub={rowSub(t)} onPlay={() => playTracks(tracks, i, ctx)} />)}
       </div>
       {album && (
         <div className="album__foot">

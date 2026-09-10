@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
+import { mirrorsDown, subscribe as subscribeInstances } from './api/instances'
 
 export interface Resource<T> {
   data: T | null
@@ -57,4 +58,18 @@ export function useDocumentTitle(title: string) {
       document.title = prev
     }
   }, [title])
+}
+
+/** True while every mirror is benched and the app is browsing TIDAL's catalogue directly. */
+export function useMirrorsDown(): boolean {
+  const [down, setDown] = useState(() => mirrorsDown())
+  useEffect(() => {
+    const unsub = subscribeInstances(() => setDown(mirrorsDown()))
+    const t = setInterval(() => setDown(mirrorsDown()), 15000)
+    return () => {
+      unsub()
+      clearInterval(t)
+    }
+  }, [])
+  return down
 }

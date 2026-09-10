@@ -1,7 +1,7 @@
 import { Link } from 'react-router-dom'
 import { cover, getPlaylist, getRecommendations, playlistImage, searchPlaylists } from '../lib/api/catalog'
 import type { Album, Track } from '../lib/api/types'
-import { useDocumentTitle, useResource } from '../lib/hooks'
+import { useDocumentTitle, useMirrorsDown, useResource } from '../lib/hooks'
 import { useLibrary } from '../store/library'
 import { usePlayer } from '../store/player'
 import { Card, Carousel, ErrorState, Hero, Section, SkeletonCards } from '../components/Common'
@@ -27,6 +27,7 @@ export function Home() {
   const playlists = useLibrary((s) => s.playlists)
   const followedMap = useLibrary((s) => s.followedPlaylists)
   const playTracks = usePlayer((s) => s.playTracks)
+  const mirrorsAreDown = useMirrorsDown()
   const seed = recentTracks[0]
   const arrivals = useResource((signal) => getPlaylist(NEW_ARRIVALS, { signal }), [])
   const because = useResource((signal) => (seed ? getRecommendations(seed.id, { signal }) : Promise.resolve([] as Track[])), [seed?.id])
@@ -80,7 +81,7 @@ export function Home() {
       )}
 
       {[['chill', 'Chill'], ['focus', 'Focus'], ['workout', 'Workout'], ['party', 'Party']].map(([term, title]) => <MoodRow key={term} term={term} title={title} />)}
-      <p className="quick__hint" style={{ marginTop: 28 }}>Catalogue from Monochrome mirrors. Lyrics from lrclib. <Link to="/settings" style={{ color: 'var(--fg)', fontWeight: 700 }}>Settings</Link></p>
+      <p className="quick__hint" style={{ marginTop: 28 }}>{mirrorsAreDown ? 'Every Monochrome mirror is down right now; browsing TIDAL\'s catalogue directly, previews only.' : 'Catalogue from Monochrome mirrors.'} Lyrics from lrclib. <Link to="/settings" style={{ color: 'var(--fg)', fontWeight: 700 }}>Settings</Link></p>
     </div>
   )
 }

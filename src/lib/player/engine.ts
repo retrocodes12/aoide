@@ -41,8 +41,9 @@ export async function resolveStream(track: Track, quality: Quality, signal?: Abo
     throw new Error('Unreadable manifest')
   } catch (mirrorErr) {
     if (signal?.aborted) throw mirrorErr
-    const n = await nativeManifest(track.id, signal)
-    return { url: n.uri, mimeType: 'application/dash+xml', isPreview: n.trackPresentation === 'PREVIEW', quality: n.formats?.[0] ?? quality, source: 'tidal' }
+    const n = await nativeManifest(track.id, signal, quality)
+    const fmt = n.formats?.[0] ?? quality
+    return { url: n.uri, mimeType: 'application/dash+xml', isPreview: n.trackPresentation === 'PREVIEW', quality: fmt === 'FLAC' ? 'LOSSLESS' : fmt.startsWith('AAC') || fmt.startsWith('HEAAC') ? 'HIGH' : fmt, source: 'tidal' }
   }
 }
 

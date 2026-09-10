@@ -20,6 +20,9 @@
 /* ---------- artist ---------- */
 .banner { position: relative; height: 320px; overflow: hidden; }
 .banner img { width: 100%; height: 100%; object-fit: cover; }
+.banner--blank { height: 240px; }
+.banner__blank { width: 100%; height: 100%; display: grid; place-items: center; background: radial-gradient(120% 80% at 50% 0%, color-mix(in srgb, var(--tint) 45%, #1a1a1a), var(--ground) 85%); }
+.banner__blank span { font-size: 96px; font-weight: 900; letter-spacing: -4px; color: rgba(255, 255, 255, .08); transform: translateY(-16px); }
 .banner__scrim { position: absolute; inset: 0; background: linear-gradient(to bottom, rgba(0, 0, 0, .2), rgba(0, 0, 0, .2) 40%, var(--ground)); }
 .banner .topbar { position: absolute; top: 0; left: 0; right: 0; }
 .banner__name { position: absolute; left: var(--pad); right: var(--pad); bottom: 14px; font-size: 40px; font-weight: 900; letter-spacing: -1.2px; line-height: 1; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
@@ -27,7 +30,8 @@
 .artist__actions .spacer { flex: 1; }
 .about { margin: 0 var(--pad); border-radius: var(--radius-lg); overflow: hidden; background: var(--elevated); }
 .about img { width: 100%; height: 200px; object-fit: cover; }
-.about p { padding: 16px; font-size: 14px; line-height: 1.6; color: var(--subdued); white-space: pre-line; display: -webkit-box; -webkit-line-clamp: 4; -webkit-box-orient: vertical; overflow: hidden; }
+.about__text { padding: 16px; }
+.about p { font-size: 14px; line-height: 1.6; color: var(--subdued); white-space: pre-line; display: -webkit-box; -webkit-line-clamp: 4; -webkit-box-orient: vertical; overflow: hidden; }
 .about.is-open p { -webkit-line-clamp: unset; }
 
 /* ---------- search ---------- */

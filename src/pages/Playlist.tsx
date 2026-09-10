@@ -62,6 +62,7 @@ export function LocalPlaylistPage() {
   const status = usePlayer((s) => s.status)
   const index = usePlayer((s) => s.index)
   const toast = useUI((s) => s.toast)
+  const ask = useUI((s) => s.ask)
   const setTintFrom = useUI((s) => s.setTintFrom)
   const [renaming, setRenaming] = useState(false)
   const [name, setName] = useState('')
@@ -79,7 +80,7 @@ export function LocalPlaylistPage() {
         meta={`You · ${plural(pl.tracks.length, 'song')}${total ? ` · ${fmtLength(total)}` : ''}`}
         actions={<>
           <button className="iconbtn iconbtn--sub" aria-label="Rename playlist" data-testid="rename_playlist" onClick={() => { setName(pl.title); setRenaming(true) }}><IPencil /></button>
-          <button className="iconbtn iconbtn--sub" aria-label="Delete playlist" data-testid="delete_playlist" onClick={() => { if (window.confirm(`Delete “${pl.title}”?`)) { deletePlaylist(pl.id); toast('Playlist deleted'); nav('/library') } }}><ITrash /></button>
+          <button className="iconbtn iconbtn--sub" aria-label="Delete playlist" data-testid="delete_playlist" onClick={() => ask(`Delete “${pl.title}”?`, 'Delete', () => { deletePlaylist(pl.id); toast('Playlist deleted'); nav('/library') }, 'This removes the playlist from this device. Songs stay in the catalogue.')}><ITrash /></button>
         </>}
         playing={thisPlaying}
         canPlay={pl.tracks.length > 0}
@@ -87,10 +88,10 @@ export function LocalPlaylistPage() {
         onShuffle={() => playTracks(pl.tracks, Math.floor(Math.random() * pl.tracks.length), ctx)}
       />
       {renaming && (
-        <div className="sheet__row" style={{ padding: '0 16px 8px' }}>
-          <input className="input" value={name} onChange={(e) => setName(e.target.value)} aria-label="Playlist name" data-testid="rename_input" />
-          <button className="pill pill--filled" style={{ height: 44 }} onClick={() => { renamePlaylist(pl.id, name); setRenaming(false); toast('Renamed') }}>Save</button>
-        </div>
+        <form className="sheet__row" style={{ padding: '0 16px 8px' }} onSubmit={(e) => { e.preventDefault(); renamePlaylist(pl.id, name); setRenaming(false); toast('Renamed') }}>
+          <input className="input" value={name} onChange={(e) => setName(e.target.value)} aria-label="Playlist name" data-testid="rename_input" autoFocus enterKeyHint="done" />
+          <button className="pill pill--filled" style={{ height: 44 }} type="submit">Save</button>
+        </form>
       )}
       <div className="tracks">
         {pl.tracks.length ? pl.tracks.map((t, i) => <TrackRow key={`${t.id}-${i}`} track={t} onPlay={() => playTracks(pl.tracks, i, ctx)} onRemove={() => { removeFromPlaylist(pl.id, i); toast(`Removed from ${pl.title}`) }} />) : <Empty title="Let's find something for your playlist" body="Use ··· on any song to add it here." />}

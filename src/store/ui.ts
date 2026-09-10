@@ -12,6 +12,7 @@ interface UIState {
   lyricsOpen: boolean
   queueOpen: boolean
   menu: { track: Track; onRemove?: () => void } | null
+  confirm: { title: string; body?: string; action: string; onConfirm: () => void } | null
   toasts: Toast[]
   tint: string
   previewNoted: boolean
@@ -23,6 +24,8 @@ interface UIState {
   closeQueue: () => void
   openMenu: (track: Track, onRemove?: () => void) => void
   closeMenu: () => void
+  ask: (title: string, action: string, onConfirm: () => void, body?: string) => void
+  closeConfirm: () => void
   closeOverlays: () => void
   toast: (text: string) => void
   dismiss: (id: number) => void
@@ -37,6 +40,7 @@ export const useUI = create<UIState>((set, get) => ({
   lyricsOpen: false,
   queueOpen: false,
   menu: null,
+  confirm: null,
   toasts: [],
   tint: '#4a4a4a',
   previewNoted: localStorage.getItem('aoide:previewNoted') === '1',
@@ -48,7 +52,9 @@ export const useUI = create<UIState>((set, get) => ({
   closeQueue: () => set({ queueOpen: false }),
   openMenu: (track, onRemove) => set({ menu: { track, onRemove } }),
   closeMenu: () => set({ menu: null }),
-  closeOverlays: () => set({ nowPlayingOpen: false, lyricsOpen: false, queueOpen: false, menu: null }),
+  ask: (title, action, onConfirm, body) => set({ confirm: { title, action, onConfirm, body } }),
+  closeConfirm: () => set({ confirm: null }),
+  closeOverlays: () => set({ nowPlayingOpen: false, lyricsOpen: false, queueOpen: false, menu: null, confirm: null }),
   toast: (text) => {
     const id = ++seq
     set({ toasts: [...get().toasts.slice(-1), { id, text }] })

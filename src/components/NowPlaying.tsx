@@ -30,7 +30,65 @@ export function NowPlaying() {
   const nav = useNavigate()
   const [scrub, setScrub] = useState<number | null>(null)
   const lyrics = useResource((signal) => (track ? getLyrics(track, { signal }) : Promise.resolve(null)), [track?.id])
-  const dragY = useRef<number | null>(null)
+  const sheet = useRef<HTMLElement>(null)
+  const body = useRef<HTMLDivElement>(null)
+  const hasTrack = track !== null
+  // Pull-down-to-dismiss. Native listeners so touchmove can be non-passive: once the sheet
+  // is following the finger we cancel the browser's own scroll, otherwise pointer events
+  // would be cancelled the moment the body starts panning.
+  useEffect(() => {
+    const el = body.current
+    const sh = sheet.current
+    if (!el || !sh) return
+    let d: { y0: number; t0: number; dy: number } | null = null
+    const reset = () => {
+      sh.style.transition = ''
+      sh.style.transform = ''
+    }
+    const down = (e: PointerEvent) => {
+      if ((e.target as HTMLElement).closest('input, .np__ctl, .np__lyrics, .np__row--actions')) return
+      if (el.scrollTop > 2 || e.clientY > window.innerHeight * 0.6) return
+      d = { y0: e.clientY, t0: performance.now(), dy: 0 }
+    }
+    const move = (e: PointerEvent) => {
+      if (!d) return
+      d.dy = e.clientY - d.y0
+      if (d.dy > 6) {
+        sh.style.transition = 'none'
+        sh.style.transform = `translateY(${d.dy}px)`
+      } else if (d.dy < -6) {
+        d = null
+        reset()
+      }
+    }
+    const touchMove = (e: TouchEvent) => {
+      if (d && d.dy > 0) e.preventDefault()
+    }
+    const up = () => {
+      if (!d) return
+      const { dy, t0 } = d
+      d = null
+      reset()
+      const v = dy / Math.max(1, performance.now() - t0)
+      if (dy > 120 || (dy > 40 && v > 0.6)) useUI.getState().closeNowPlaying()
+    }
+    const cancel = () => {
+      d = null
+      reset()
+    }
+    el.addEventListener('pointerdown', down)
+    el.addEventListener('pointermove', move)
+    el.addEventListener('pointerup', up)
+    el.addEventListener('pointercancel', cancel)
+    el.addEventListener('touchmove', touchMove, { passive: false })
+    return () => {
+      el.removeEventListener('pointerdown', down)
+      el.removeEventListener('pointermove', move)
+      el.removeEventListener('pointerup', up)
+      el.removeEventListener('pointercancel', cancel)
+      el.removeEventListener('touchmove', touchMove)
+    }
+  }, [hasTrack])
   useEffect(() => {
     if (!open) return
     const onKey = (e: KeyboardEvent) => e.key === 'Escape' && closeNowPlaying()
@@ -45,19 +103,15 @@ export function NowPlaying() {
   const go = (r: string) => { closeNowPlaying(); nav(r) }
   const lines = lyrics.data?.synced?.map((l) => l.line).filter(Boolean) ?? lyrics.data?.plain?.split('\n').filter(Boolean) ?? []
   return (
-    <section className={`overlay${open ? ' is-open' : ''}`} aria-hidden={!open} aria-label="Now playing" data-testid="now_playing">
+    <section ref={sheet} className={`overlay${open ? ' is-open' : ''}`} aria-hidden={!open} aria-label="Now playing" data-testid="now_playing">
       <div className="np">
         <div className="np__bg" style={{ backgroundImage: `url(${artOf(track, 320)})` }} aria-hidden />
         <div className="np__scrim" aria-hidden />
-        <div
-          className="np__body"
-          onPointerDown={(e) => { dragY.current = e.clientY }}
-          onPointerUp={(e) => { if (dragY.current !== null && e.clientY - dragY.current > 140 && (e.target as HTMLElement).closest('.topbar')) closeNowPlaying(); dragY.current = null }}
-        >
+        <div className="np__body" ref={body}>
           <div className="topbar">
             <button className="iconbtn" aria-label="Close now playing" data-testid="np_close" onClick={closeNowPlaying}><IChevronDown size={28} /></button>
             <div className="np__from">
-              <div className={`np__from-label${stream?.isPreview ? ' is-preview' : ''}`}>{stream?.isPreview ? 'PREVIEW · 30 SECONDS' : `PLAYING FROM ${(context?.kind ?? 'queue').toUpperCase()}`}</div>
+              <div className="np__from-label">{`PLAYING FROM ${(context?.kind ?? 'queue').toUpperCase()}`}</div>
               <button className="np__from-title" style={{ maxWidth: '100%' }} onClick={() => context?.href && go(context.href)}>{context?.title ?? track.album?.title ?? ''}</button>
             </div>
             <button className="iconbtn" aria-label="More options" onClick={() => openMenu(track)}><IMore /></button>
@@ -93,7 +147,7 @@ export function NowPlaying() {
           </div>
           <div className="np__foot">
             <button className="iconbtn iconbtn--sub" aria-label="Lyrics" data-testid="np_lyrics" onClick={openLyrics}><ILyrics /></button>
-            <span className="note">{stream?.isPreview ? 'Preview. Add a subscribed mirror in Settings for full songs.' : ''}</span>
+            <span className="note" />
             <button className="iconbtn iconbtn--sub" aria-label="Queue" data-testid="np_queue" onClick={openQueue}><IQueue /></button>
           </div>
           <button className="np__lyrics" data-testid="lyrics_card" onClick={openLyrics}>

@@ -1,6 +1,6 @@
 import { useEffect } from 'react'
 import { Outlet, useLocation, useNavigate } from 'react-router-dom'
-import { MiniPlayer, TabBar, Toasts, TrackMenu } from './components/Shell'
+import { ConfirmSheet, MiniPlayer, TabBar, Toasts, TrackMenu } from './components/Shell'
 import { LyricsScreen, NowPlaying, QueueScreen } from './components/NowPlaying'
 import { probeMirrors, refreshFromUptime } from './lib/api/instances'
 import { usePlayer } from './store/player'
@@ -56,6 +56,7 @@ export function App() {
       <LyricsScreen />
       <QueueScreen />
       <TrackMenu />
+      <ConfirmSheet />
       <Toasts />
     </div>
   )

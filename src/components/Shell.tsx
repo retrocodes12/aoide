@@ -120,3 +120,27 @@ export function streamBadge(track: { id: number } | null, stream: { isPreview: b
   if (l.startsWith('FLAC')) return 'Lossless'
   return l
 }
+
+/** Bottom-sheet confirmation, so destructive actions never fall back to the browser's dialog. */
+export function ConfirmSheet() {
+  const confirm = useUI((s) => s.confirm)
+  const closeConfirm = useUI((s) => s.closeConfirm)
+  return (
+    <>
+      <div className={`sheet-scrim${confirm ? ' is-open' : ''}`} onClick={closeConfirm} />
+      <div className={`sheet sheet--confirm${confirm ? ' is-open' : ''}`} role="alertdialog" aria-hidden={!confirm} data-testid="confirm_sheet">
+        <div className="sheet__grab" />
+        {confirm && (
+          <div className="confirm">
+            <div className="confirm__title">{confirm.title}</div>
+            {confirm.body && <p className="confirm__body">{confirm.body}</p>}
+            <div className="confirm__row">
+              <button className="pill pill--soft" onClick={closeConfirm} data-testid="confirm_cancel">Cancel</button>
+              <button className="pill pill--filled" onClick={() => { confirm.onConfirm(); closeConfirm() }} data-testid="confirm_ok">{confirm.action}</button>
+            </div>
+          </div>
+        )}
+      </div>
+    </>
+  )
+}

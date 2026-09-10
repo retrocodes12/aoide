@@ -190,3 +190,8 @@ export async function refreshFromUptime(signal?: AbortSignal): Promise<void> {
     /* offline or worker down: keep what we have */
   }
 }
+
+/** Fires on every registry change; used by the UI to say where the catalogue is coming from. */
+export function mirrorsDown(): boolean {
+  return allCooling()
+}

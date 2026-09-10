@@ -164,10 +164,11 @@ export interface NativeManifest {
 }
 
 /** Last-resort stream source: TIDAL's own manifest endpoint (previews only without a subscription). */
-export async function nativeManifest(id: number, signal?: AbortSignal): Promise<NativeManifest> {
+export async function nativeManifest(id: number, signal?: AbortSignal, quality: string = 'LOSSLESS'): Promise<NativeManifest> {
   const tok = await nativeToken(signal)
   const p = new URLSearchParams({ adaptive: 'false', manifestType: 'MPEG_DASH', uriScheme: 'HTTPS', usage: 'PLAYBACK', countryCode: 'US' })
-  for (const f of ['FLAC', 'AACLC', 'HEAACV1']) p.append('formats', f)
+  const formats = quality === 'HIGH' || quality === 'LOW' ? ['AACLC', 'HEAACV1', 'FLAC'] : ['FLAC', 'AACLC', 'HEAACV1']
+  for (const f of formats) p.append('formats', f)
   const res = await fetch(`https://openapi.tidal.com/v2/trackManifests/${id}?${p}`, {
     headers: { Authorization: `Bearer ${tok}`, Accept: 'application/vnd.api+json' },
     signal: timeout(9000, signal),
@@ -179,6 +180,18 @@ export async function nativeManifest(id: number, signal?: AbortSignal): Promise<
 
 /* ---------- hifi-api route -> TIDAL v1 mapping, used only when every mirror is down ----------
  * hifi-api mirrors proxy TIDAL's v1 JSON under `data`, so the shapes line up one to one. */
+/** Page through a TIDAL v1 list (max 50 per page) up to `max` items. */
+async function nativePages(path: string, max: number): Promise<unknown[]> {
+  const out: unknown[] = []
+  const sep = path.includes('?') ? '&' : '?'
+  for (let offset = 0; offset < max; offset += 50) {
+    const page = await nativeGet<{ items: unknown[]; totalNumberOfItems?: number }>(`${path}${sep}limit=50&offset=${offset}`)
+    out.push(...(page.items ?? []))
+    if ((page.items ?? []).length < 50 || (page.totalNumberOfItems !== undefined && out.length >= page.totalNumberOfItems)) break
+  }
+  return out
+}
+
 async function nativeFallback(path: string): Promise<unknown> {
   const u = new URL('http://x' + path)
   const q = u.searchParams
@@ -206,8 +219,9 @@ async function nativeFallback(path: string): Promise<unknown> {
   if (route === '/artist' && q.get('id')) return { artist: await nativeGet(`/v1/artists/${q.get('id')}`) }
   if (route === '/artist' && q.get('f')) {
     const id = q.get('f')!
-    const [albums, eps] = await Promise.all([nativeGet<{ items: unknown[] }>(`/v1/artists/${id}/albums?limit=100`), nativeGet<{ items: unknown[] }>(`/v1/artists/${id}/albums?limit=100&filter=EPSANDSINGLES`)])
-    return { albums: { items: [...albums.items, ...eps.items] }, tracks: [] }
+    // TIDAL caps this list at 50 per page; walk two pages of each so a long discography still shows.
+    const [albums, eps] = await Promise.all([nativePages(`/v1/artists/${id}/albums`, 100), nativePages(`/v1/artists/${id}/albums?filter=EPSANDSINGLES`, 100)])
+    return { albums: { items: [...albums, ...eps] }, tracks: [] }
   }
   if (route === '/artist/similar') return { artists: [] }
   if (route === '/playlist' && q.get('id')) {
