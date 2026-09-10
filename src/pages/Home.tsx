@@ -85,12 +85,18 @@ export function Home() {
   )
 }
 
+/** TIDAL's editorial search mixes markets; keep the rows in the app's language unless that leaves too few. */
+function englishFirst<T extends { title: string }>(items: T[]): T[] {
+  const ascii = items.filter((p) => /^[\x20-\x7E\u2018-\u201D\u2026]+$/.test(p.title))
+  return ascii.length >= 6 ? ascii : items
+}
+
 function MoodRow({ term, title }: { term: string; title: string }) {
-  const res = useResource((signal) => searchPlaylists(term, 12, { signal }), [term])
+  const res = useResource((signal) => searchPlaylists(term, 20, { signal }), [term])
   if (res.error || (!res.loading && !res.data?.items.length)) return null
   return (
     <Section title={title} to={`/search?q=${encodeURIComponent(term)}&tab=playlists`}>
-      {res.loading ? <SkeletonCards /> : <Carousel>{res.data!.items.slice(0, 12).map((p) => <Card key={p.uuid} to={`/playlist/${p.uuid}`} image={playlistImage(p, 320)} title={p.title} sub={p.description?.replace(/\s*\(Cover:.*$/, '') || (p.numberOfTracks ? `${p.numberOfTracks} songs` : 'Playlist')} />)}</Carousel>}
+      {res.loading ? <SkeletonCards /> : <Carousel>{englishFirst(res.data!.items).slice(0, 12).map((p) => <Card key={p.uuid} to={`/playlist/${p.uuid}`} image={playlistImage(p, 320)} title={p.title} sub={p.description?.replace(/\s*\(Cover:.*$/, '') || (p.numberOfTracks ? `${p.numberOfTracks} songs` : 'Playlist')} />)}</Carousel>}
     </Section>
   )
 }
