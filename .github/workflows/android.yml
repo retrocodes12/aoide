@@ -34,6 +34,7 @@ jobs:
           AOIDE_STORE_PASSWORD: ${{ secrets.AOIDE_STORE_PASSWORD }}
         run: >
           ./gradlew assembleRelease --no-daemon --stacktrace
+          "-Dorg.gradle.jvmargs=-Xmx3g -XX:MaxMetaspaceSize=1g -Dfile.encoding=UTF-8"
           "-PaoideKeystore=$RUNNER_TEMP/aoide-release.jks"
           "-PaoideStorePassword=$AOIDE_STORE_PASSWORD"
           "-PaoideKeyPassword=$AOIDE_STORE_PASSWORD"
