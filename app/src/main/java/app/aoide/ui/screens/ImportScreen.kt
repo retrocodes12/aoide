@@ -72,9 +72,8 @@ fun ImportScreen(initialLink: String?, onBack: () -> Unit, onNavigate: (String) 
         step = Step.Reading
         scope.launch {
             try {
-                val src = Importer.read(k, id)
-                step = Step.Matching(0, src.songs.size, src.title)
-                val r = Importer.match(src) { d, t -> step = Step.Matching(d, t, src.title) }
+                step = Step.Matching(0, 0, "the playlist")
+                val r = Importer.import(k, id) { d, t -> step = Step.Matching(d, t, "the playlist") }
                 step = Step.Done(r)
             } catch (e: CancellationException) {
                 throw e
@@ -91,9 +90,9 @@ fun ImportScreen(initialLink: String?, onBack: () -> Unit, onNavigate: (String) 
                 IconButton(onClick = onBack, modifier = Modifier.semantics { contentDescription = "Back" }.testTag("back")) { Icon(Icons.AutoMirrored.Filled.ArrowBack, null, tint = Aoide.fg) }
                 Text("Import a playlist", style = MaterialTheme.typography.headlineSmall)
             }
-            Text("Paste a link to a public Spotify playlist or a YouTube Music playlist. Each song is matched in the catalogue by artist, title and length; anything that doesn't match is listed, not guessed.", style = MaterialTheme.typography.bodySmall, color = Aoide.subdued, modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp))
+            Text("Paste a public playlist link from the music service or from the other big streaming service. Songs from elsewhere are matched here by artist, title and length; anything that doesn't match is listed, not guessed.", style = MaterialTheme.typography.bodySmall, color = Aoide.subdued, modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp))
             Row(Modifier.padding(horizontal = 16.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
-                AoideField(link, { link = it }, "https://open.spotify.com/playlist/…", Modifier.weight(1f).testTag("import_link"), onDone = { if (kind != null) run() })
+                AoideField(link, { link = it }, "Paste a playlist link", Modifier.weight(1f).testTag("import_link"), onDone = { if (kind != null) run() })
                 Spacer(Modifier.width(8.dp))
                 TextButton(onClick = { clipboard.getText()?.text?.let { link = it.trim() } }, modifier = Modifier.testTag("import_paste")) { Text("Paste", color = Aoide.accent) }
             }
@@ -102,9 +101,9 @@ fun ImportScreen(initialLink: String?, onBack: () -> Unit, onNavigate: (String) 
                 Text(
                     when {
                         link.isBlank() -> ""
-                        kind == null -> "That doesn't look like a Spotify or YouTube Music playlist link."
-                        kind.first == "spotify" -> "Spotify playlist"
-                        else -> "YouTube Music playlist"
+                        kind == null -> "That doesn't look like a playlist link Aoide can read."
+                        kind.first == "list" -> "Playlist from the other streaming service"
+                        else -> "Playlist from the music service"
                     },
                     style = MaterialTheme.typography.bodySmall, color = if (kind == null && link.isNotBlank()) Aoide.accent else Aoide.subdued,
                 )

@@ -40,8 +40,7 @@ data class Download(
 data class DownloadProgress(val track: Track, val fraction: Float)
 
 /**
- * The download manager. Songs are fetched from YouTube Music (the only source that hands out whole
- * files) one at a time on a background queue, written under the app's private storage, and listed
+ * The download manager. Songs are fetched from the music service one at a time on a background queue, written under the app's private storage, and listed
  * in an index the resolver checks before it touches the network. A foreground service keeps the
  * process alive while the queue drains and shows progress in the shade.
  */
@@ -50,14 +49,14 @@ object Downloads {
     private lateinit var indexFile: File
     private var appContext: Context? = null
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
-    private val _all = MutableStateFlow<Map<Long, Download>>(emptyMap())
-    val all: StateFlow<Map<Long, Download>> = _all
+    private val _all = MutableStateFlow<Map<String, Download>>(emptyMap())
+    val all: StateFlow<Map<String, Download>> = _all
     private val _queue = MutableStateFlow<List<Track>>(emptyList())
     val queue: StateFlow<List<Track>> = _queue
     private val _current = MutableStateFlow<DownloadProgress?>(null)
     val current: StateFlow<DownloadProgress?> = _current
-    private val _failed = MutableStateFlow<Map<Long, String>>(emptyMap())
-    val failed: StateFlow<Map<Long, String>> = _failed
+    private val _failed = MutableStateFlow<Map<String, String>>(emptyMap())
+    val failed: StateFlow<Map<String, String>> = _failed
     private var worker: Job? = null
 
     fun init(context: Context) {
@@ -70,25 +69,25 @@ object Downloads {
         }
     }
 
-    fun has(trackId: Long): Boolean = _all.value.containsKey(trackId)
-    fun get(trackId: Long): Download? = _all.value[trackId]
-    fun isQueued(trackId: Long): Boolean = _queue.value.any { it.id == trackId } || _current.value?.track?.id == trackId
+    fun has(trackId: String): Boolean = _all.value.containsKey(trackId)
+    fun get(trackId: String): Download? = _all.value[trackId]
+    fun isQueued(trackId: String): Boolean = _queue.value.any { it.id == trackId } || _current.value?.track?.id == trackId
     val totalBytes: Long get() = _all.value.values.sumOf { it.bytes }
 
     /** Queue songs that are not already kept or waiting; duplicates are dropped silently. */
     fun enqueue(tracks: List<Track>) {
-        val fresh = tracks.filter { it.duration > 0 && !has(it.id) && !isQueued(it.id) }.distinctBy { it.id }
+        val fresh = tracks.filter { !it.isLocal && !has(it.id) && !isQueued(it.id) }.distinctBy { it.id }
         if (fresh.isEmpty()) return
         _queue.value = _queue.value + fresh
         _failed.value = _failed.value - fresh.map { it.id }.toSet()
         start()
     }
 
-    fun cancel(trackId: Long) {
+    fun cancel(trackId: String) {
         _queue.value = _queue.value.filter { it.id != trackId }
     }
 
-    fun remove(trackId: Long) {
+    fun remove(trackId: String) {
         _all.value[trackId]?.let { runCatching { File(it.file).delete() } }
         _all.value = _all.value - trackId
         persist()
@@ -123,13 +122,12 @@ object Downloads {
 
     private suspend fun fetch(t: Track) {
         _current.value = DownloadProgress(t, 0f)
-        val videoId = YouTubeMusic.match(t) ?: throw IllegalStateException("No full-length source for this song")
-        val s = YouTubeMusic.stream(videoId, Prefs.quality.value) ?: throw IllegalStateException("YouTube did not hand out a whole file")
+        val s = Music.stream(t.id, Prefs.quality.value) ?: throw IllegalStateException("The music service did not hand out a whole file")
         val ext = if (s.mimeType.contains("webm")) "webm" else "m4a"
         val out = File(dir, "${t.id}.$ext")
         val tmp = File(dir, "${t.id}.part")
-        // Ranged 1 MiB reads, the way the player itself streams: one long GET is what googlevideo cuts short.
-        val ua = YouTubeMusic.userAgentFor(s.client)
+        // Ranged 1 MiB reads, the way the player itself streams: one long GET is what the CDN cuts short.
+        val ua = Music.userAgentFor(s.client)
         val total = s.contentLength
         val chunk = 1L shl 20
         var offset = 0L

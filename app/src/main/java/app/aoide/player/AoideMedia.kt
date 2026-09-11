@@ -20,7 +20,7 @@ import app.aoide.data.LocalMedia
 import app.aoide.data.Prefs
 import app.aoide.data.Quality
 import app.aoide.data.Track
-import app.aoide.data.YouTubeMusic
+import app.aoide.data.Music
 import app.aoide.data.json
 import kotlinx.coroutines.runBlocking
 import kotlinx.serialization.encodeToString
@@ -30,8 +30,8 @@ import kotlinx.serialization.encodeToString
  *
  * Queue items are `aoide://track/{id}` DASH items. The resolver turns each into a real manifest on
  * ExoPlayer's loader thread the moment the song is reached, and stamps every request with a user
- * agent: googlevideo gets the one its stream was issued to, everything else gets Aoide's own.
- * Songs from the phone's own storage (negative ids) play straight from their content URI.
+ * agent: the service's CDN gets the one its stream was issued to, everything else gets Aoide's own.
+ * Songs from the phone's own storage (`local:` ids) play straight from their content URI.
  */
 @UnstableApi
 object AoideMedia {
@@ -63,12 +63,12 @@ object AoideMedia {
 
     /** MediaItems lose their URI crossing the session's IPC boundary; rebuild it from the id and keep the track for matching. */
     fun toPlayable(item: MediaItem): MediaItem {
-        val id = item.mediaId.toLongOrNull()
+        val id = item.mediaId
         val fromExtras = item.mediaMetadata.extras?.getString("track")?.let { s -> runCatching { json.decodeFromString<Track>(s) }.getOrNull() }
         fromExtras?.let(TrackRegistry::put)
         // A browser (Android Auto) sends a bare id: rebuild the whole item from the track the library handed out.
-        val base = if (fromExtras == null && id != null) TrackRegistry.get(id)?.let(::mediaItemFor) ?: item else item
-        if (id != null && LocalMedia.isLocal(id)) return base.buildUpon().setUri(Uri.parse(LocalMedia.uriFor(id))).setMimeType(null).build()
+        val base = if (fromExtras == null) TrackRegistry.get(id)?.let(::mediaItemFor) ?: item else item
+        if (LocalMedia.isLocal(id)) return base.buildUpon().setUri(Uri.parse(LocalMedia.uriFor(id))).setMimeType(null).build()
         return base.buildUpon().setUri(Uri.parse("aoide://track/${item.mediaId}")).setMimeType(MimeTypes.APPLICATION_MPD).build()
     }
 
@@ -83,7 +83,7 @@ object AoideMedia {
     object Resolver : ResolvingDataSource.Resolver {
         override fun resolveDataSpec(dataSpec: DataSpec): DataSpec {
             if (dataSpec.uri.scheme == "aoide") {
-                val id = dataSpec.uri.lastPathSegment?.toLongOrNull() ?: throw IllegalArgumentException("Bad track uri ${dataSpec.uri}")
+                val id = dataSpec.uri.lastPathSegment?.takeIf { it.isNotBlank() } ?: throw IllegalArgumentException("Bad track uri ${dataSpec.uri}")
                 val resolved = runBlocking { StreamResolver.resolve(id, effectiveQuality()) }
                 return stamp(dataSpec.buildUpon().setUri(resolved.uri).build())
             }
@@ -93,7 +93,7 @@ object AoideMedia {
         private fun stamp(spec: DataSpec): DataSpec {
             if (spec.uri.scheme != "http" && spec.uri.scheme != "https") return spec
             val host = spec.uri.host ?: return spec
-            val ua = if (host.endsWith("googlevideo.com")) YouTubeMusic.userAgentFor(spec.uri.getQueryParameter("c")) else ApiClient.UA
+            val ua = if (host.endsWith(Music.CDN_SUFFIX)) Music.userAgentFor(spec.uri.getQueryParameter("c")) else ApiClient.UA
             return spec.withAdditionalHeaders(mapOf("User-Agent" to ua))
         }
     }

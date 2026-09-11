@@ -1,16 +1,14 @@
 package app.aoide.data
 
-import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.JsonArray
-import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonObjectBuilder
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.intOrNull
-import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.put
 import kotlinx.serialization.json.putJsonObject
@@ -18,25 +16,20 @@ import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
 import java.io.IOException
-import java.text.Normalizer
 import java.util.Locale
 import java.util.concurrent.ConcurrentHashMap
-import kotlin.math.abs
-import kotlin.math.max
 
 /**
- * Full-length audio from YouTube Music, for songs the mirrors only preview.
+ * The music service behind everything: its catalogue (search, browse, queues) through the web
+ * client's private API, and its audio through the player API while posing as one of the
+ * service's own apps. Only streams handed out as plain URLs are used: no signature cipher, no
+ * anti-bot challenge, no JavaScript. Some clients' URLs are cut off at about 1 MiB, so every
+ * stream is checked by reading its last bytes before it is trusted.
  *
- * Aoide browses TIDAL's catalogue. For each song this finds the same recording on YouTube Music
- * (artist, title and length must all agree) and asks YouTube's player API for its audio while
- * identifying as one of YouTube's own apps. Only streams handed out as plain URLs are used: no
- * signature cipher, no BotGuard, no JavaScript. Some clients' URLs are cut off by googlevideo at
- * about 1 MiB, so every stream is checked by reading its last bytes before it is trusted.
- *
- * Which app to pose as changes when YouTube tightens one, so the client list is also fetched from
- * the repo (config/yt-clients.json) and the built-in copy below is only the fallback.
+ * Which app to pose as changes when the service tightens one, so the client list is also fetched
+ * from the repo (config/yt-clients.json) and the built-in copy below is only the fallback.
  */
-object YouTubeMusic {
+object Music {
     @Serializable
     data class Client(
         val name: String,
@@ -51,10 +44,7 @@ object YouTubeMusic {
     )
 
     @Serializable
-    data class Config(val searchClientVersion: String = SEARCH_VERSION, val clients: List<Client> = BUILT_IN)
-
-    /** A song on YouTube Music's songs shelf. */
-    data class Candidate(val videoId: String, val title: String, val artists: String, val album: String?, val durationSec: Int, val explicit: Boolean, val officialAudio: Boolean)
+    data class Config(val searchClientVersion: String = WEB_VERSION, val clients: List<Client> = BUILT_IN)
 
     /** One audio-only stream, with what a DASH manifest needs to describe it. */
     data class AudioStream(
@@ -73,16 +63,23 @@ object YouTubeMusic {
         val client: String,
     )
 
-    private const val SEARCH_VERSION = "1.20260213.01.00"
-    /** The songs filter on music.youtube.com's search. */
-    private const val SONGS_FILTER = "EgWKAQIIAWoKEAkQBRAKEAMQBA=="
+    private const val WEB_VERSION = "1.20260213.01.00"
     private const val WEB_UA = "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/140.0.0.0 Safari/537.36"
+    private const val MUSIC = "https://music.youtube.com"
     const val CONFIG_URL = "https://raw.githubusercontent.com/retrocodes12/aoide/main/config/yt-clients.json"
+    const val CDN_SUFFIX = "googlevideo.com"
+
+    /** Search filters: songs, albums, artists, featured playlists, community playlists. */
+    const val F_SONGS = "EgWKAQIIAWoKEAkQBRAKEAMQBA=="
+    const val F_ALBUMS = "EgWKAQIYAWoKEAkQBRAKEAMQBA=="
+    const val F_ARTISTS = "EgWKAQIgAWoKEAkQBRAKEAMQBA=="
+    const val F_PLAYLISTS = "EgeKAQQoADgBagwQDhAKEAMQBBAJEAU="
+    const val F_COMMUNITY = "EgeKAQQoAEABagoQAxAEEAkQChAF"
 
     /**
-     * Measured 2026-09-11: VISIONOS served every file tested start to finish. ANDROID_VR returns
-     * full-length URLs that stop at about 1 MiB; it stays listed in case that changes, and the
-     * end-of-file check rejects it while it does not.
+     * Measured 2026-09-11: the visionOS client served every file tested start to finish. The
+     * VR client returns full-length URLs that stop at about 1 MiB; it stays listed in case that
+     * changes, and the end-of-file check rejects it while it does not.
      */
     val BUILT_IN = listOf(
         Client(
@@ -104,123 +101,56 @@ object YouTubeMusic {
     @Volatile private var visitorAt = 0L
     /** Clients whose URLs were caught stopping short, benched for half an hour. */
     private val benched = ConcurrentHashMap<String, Long>()
-    /** trackId -> videoId; "" remembers that there was no match. */
-    private val matches = ConcurrentHashMap<Long, String>()
+    /** Catalogue answers are memoised for fifteen minutes; pages are heavy and the same one is asked for again and again. */
+    private data class Entry(val at: Long, val body: JsonObject)
+    private val cache = LinkedHashMap<String, Entry>()
+    private const val TTL = 15 * 60_000L
 
-    /* ---------- matching ---------- */
+    /* ---------- catalogue ---------- */
 
-    /** The YouTube Music video id for a TIDAL track, or null when no recording agrees on artist, title and length. */
-    suspend fun match(track: Track): String? {
-        matches[track.id]?.let { return it.ifEmpty { null } }
-        stored(track.id)?.let { v ->
-            if (!v.startsWith("-")) { matches[track.id] = v; return v }
-            val at = v.drop(1).toLongOrNull() ?: 0L
-            if (System.currentTimeMillis() - at < NO_MATCH_TTL) { matches[track.id] = ""; return null }
-        }
-        val id = find(track)?.videoId
-        remember(track.id, id)
-        return id
+    private fun webContext(): JsonObject = buildJsonObject {
+        putJsonObject("context") { putJsonObject("client") { put("clientName", "WEB_REMIX"); put("clientVersion", config.searchClientVersion); put("hl", "en"); put("gl", "US") } }
     }
 
-    /** The best YouTube Music candidate for [track], uncached: two searches at most. */
-    suspend fun find(track: Track): Candidate? {
-        val primary = track.primaryArtist?.name.orEmpty()
-        val queries = listOf("$primary ${track.title}", "${track.title} ${track.artistNames}").map { it.trim() }.distinct()
-        var best: Pair<Double, Candidate>? = null
-        for (q in queries) {
-            val found = try { search(q) } catch (e: CancellationException) { throw e } catch (e: Exception) { emptyList() }
-            for (c in found.take(10)) {
-                val s = score(track, c) ?: continue
-                if (best == null || s > best.first) best = s to c
-            }
-            if (best != null) break
-        }
-        return best?.second
-    }
-
-    /** Null means "not the same recording": title, artist and length all have to agree. Higher is a closer match. */
-    fun score(track: Track, c: Candidate): Double? {
-        val want = norm(track.title)
-        val got = norm(c.title)
-        val titleOk = want.isNotEmpty() && (got == want || got.startsWith(want) || want.startsWith(got) || got.contains(want))
-        val names = track.artists.ifEmpty { listOfNotNull(track.artist) }.map { norm(it.name) }.filter { it.isNotEmpty() }
-        val credited = norm(c.artists)
-        val artistOk = names.any { credited.contains(it) }
-        val diff = abs(c.durationSec - track.duration)
-        val lengthOk = diff <= max(4, (track.duration * 0.03).toInt())
-        if (!titleOk || !artistOk || !lengthOk) return null
-        var s = 0.0
-        if (got == want) s += 3
-        if (c.officialAudio) s += 2
-        if (c.explicit == track.explicit) s += 1
-        track.version?.let { v -> if (norm(v).isNotEmpty() && got.contains(norm(v))) s += 1 }
-        return s - diff / 3.0
-    }
-
-    /** Lowercase, accents off, punctuation to spaces; letters of every script survive. */
-    fun norm(s: String): String =
-        Normalizer.normalize(s, Normalizer.Form.NFKD).replace(Regex("\\p{M}+"), "").lowercase(Locale.ROOT).replace(Regex("[^\\p{L}\\p{N}]+"), " ").trim()
-
-    /** YouTube Music's songs shelf for a query. */
-    suspend fun search(query: String): List<Candidate> = withContext(Dispatchers.IO) {
+    private suspend fun call(endpoint: String, extra: JsonObjectBuilder.() -> Unit): JsonObject = withContext(Dispatchers.IO) {
         clients()
-        val body = buildJsonObject {
-            putJsonObject("context") { putJsonObject("client") { put("clientName", "WEB_REMIX"); put("clientVersion", config.searchClientVersion); put("hl", "en"); put("gl", "US") } }
-            put("query", query)
-            put("params", SONGS_FILTER)
+        val body = buildJsonObject { for ((k, v) in webContext()) put(k, v); extra() }
+        val key = endpoint + body.toString()
+        synchronized(cache) { cache[key]?.let { if (System.currentTimeMillis() - it.at < TTL) return@withContext it.body else cache.remove(key) } }
+        val d = postJson("$MUSIC/youtubei/v1/$endpoint?prettyPrint=false", body, mapOf("User-Agent" to WEB_UA, "Origin" to MUSIC, "Referer" to "$MUSIC/"))
+        synchronized(cache) {
+            if (cache.size >= 120) cache.remove(cache.keys.first())
+            cache[key] = Entry(System.currentTimeMillis(), d)
         }
-        val d = postJson("https://music.youtube.com/youtubei/v1/search?prettyPrint=false", body, mapOf("User-Agent" to WEB_UA, "Origin" to "https://music.youtube.com", "Referer" to "https://music.youtube.com/"))
-        val out = ArrayList<Candidate>()
-        fun walk(e: JsonElement) {
-            when (e) {
-                is JsonObject -> {
-                    (e["musicResponsiveListItemRenderer"] as? JsonObject)?.let { r -> candidate(r)?.let { out.add(it) } }
-                    e.values.forEach { walk(it) }
-                }
-                is JsonArray -> e.forEach { walk(it) }
-                else -> Unit
-            }
-        }
-        walk(d)
-        out
+        d
     }
 
-    private fun candidate(r: JsonObject): Candidate? {
-        val videoId = (r["playlistItemData"] as? JsonObject)?.get("videoId")?.jsonPrimitive?.contentOrNull ?: return null
-        val cols = (r["flexColumns"] as? JsonArray)?.map { c -> runs(((c as? JsonObject)?.get("musicResponsiveListItemFlexColumnRenderer") as? JsonObject)?.get("text")) } ?: return null
-        if (cols.size < 2) return null
-        // "Radiohead • In Rainbows • 3:58" (sometimes led by "Song")
-        val parts = cols[1].split(" • ").map { it.trim() }.toMutableList()
-        if (parts.firstOrNull() == "Song") parts.removeAt(0)
-        val seconds = parts.lastOrNull()?.let(::parseDuration) ?: return null
-        val raw = r.toString()
-        return Candidate(
-            videoId = videoId, title = cols[0], artists = parts.getOrElse(0) { "" },
-            album = if (parts.size >= 3) parts[1] else null, durationSec = seconds,
-            explicit = raw.contains("MUSIC_EXPLICIT_BADGE"), officialAudio = raw.contains("MUSIC_VIDEO_TYPE_ATV"),
-        )
+    suspend fun search(query: String, params: String? = null): JsonObject = call("search") { put("query", query); params?.let { put("params", it) } }
+    suspend fun browse(browseId: String, params: String? = null): JsonObject = call("browse") { put("browseId", browseId); params?.let { put("params", it) } }
+    suspend fun continuation(token: String): JsonObject = call("browse") { put("continuation", token) }
+    /** The service's own queue for a song or a playlist: its radio when [playlistId] is `RDAMVM` + the video id. */
+    suspend fun next(videoId: String?, playlistId: String?): JsonObject = call("next") {
+        videoId?.let { put("videoId", it) }
+        playlistId?.let { put("playlistId", it) }
+        put("isAudioOnly", true)
+        put("tunerSettingValue", "AUTOMIX_SETTING_NORMAL")
+        put("enablePersistentPlaylistPanel", true)
     }
 
-    private fun runs(t: JsonElement?): String =
-        ((t as? JsonObject)?.get("runs") as? JsonArray)?.joinToString("") { (it as? JsonObject)?.get("text")?.jsonPrimitive?.contentOrNull ?: "" } ?: ""
-
-    private fun parseDuration(s: String): Int? {
-        val p = s.split(":").map { it.toIntOrNull() ?: return null }
-        return when (p.size) {
-            2 -> p[0] * 60 + p[1]
-            3 -> p[0] * 3600 + p[1] * 60 + p[2]
-            else -> null
-        }
+    /** Artwork at [size] px square: the service's image host resizes and crops by URL suffix. Other hosts are left alone. */
+    fun image(url: String?, size: Int, crop: Boolean = true): String? {
+        if (url == null) return null
+        if (!url.contains("googleusercontent.com") && !url.contains("ggpht.com")) return url
+        val base = url.substringBeforeLast('=', url)
+        return "$base=w$size-h$size${if (crop) "-p" else ""}-l90-rj"
     }
 
-    private const val NO_MATCH_TTL = 3 * 86_400_000L
-
-    private fun remember(trackId: Long, videoId: String?) {
-        matches[trackId] = videoId ?: ""
-        if (Prefs.isReady()) Prefs.putString("ytm:$trackId", videoId ?: "-${System.currentTimeMillis()}")
+    /** A wide crop, for artist banners. */
+    fun imageWide(url: String?, w: Int, h: Int): String? {
+        if (url == null) return null
+        if (!url.contains("googleusercontent.com") && !url.contains("ggpht.com")) return url
+        return "${url.substringBeforeLast('=', url)}=w$w-h$h-p-l90-rj"
     }
-
-    private fun stored(trackId: Long): String? = if (Prefs.isReady()) Prefs.getString("ytm:$trackId") else null
 
     /* ---------- streams ---------- */
 
@@ -300,19 +230,19 @@ object YouTubeMusic {
         )
     }
 
-    /** googlevideo caps some clients' URLs at about 1 MiB and answers 403 past it; read the last bytes before trusting a stream. */
+    /** The CDN caps some clients' URLs at about 1 MiB and answers 403 past it; read the last bytes before trusting a stream. */
     private fun servesWholeFile(s: AudioStream, c: Client): Boolean = runCatching {
         val from = (s.contentLength - 1024).coerceAtLeast(0)
         val req = Request.Builder().url(s.url).header("User-Agent", c.userAgent).header("Range", "bytes=$from-${s.contentLength - 1}").build()
         ApiClient.http.newCall(req).execute().use { it.code == 206 }
     }.getOrDefault(false)
 
-    /** The user agent a googlevideo URL was issued to, from its `c=` parameter. */
+    /** The user agent a CDN URL was issued to, from its `c=` parameter. */
     fun userAgentFor(clientName: String?): String = config.clients.firstOrNull { it.name == clientName }?.userAgent ?: BUILT_IN.first().userAgent
 
     /**
-     * A one-file DASH manifest for [s]: the playback service treats every song as DASH, so a YouTube
-     * stream rides the same path as a mirror's manifest. The init and index byte ranges let ExoPlayer
+     * A one-file DASH manifest for [s]: the playback service treats every song as DASH, so a stream
+     * rides the same path as a mirror's manifest. The init and index byte ranges let ExoPlayer
      * seek without downloading the file first.
      */
     fun dashManifest(s: AudioStream): String {
@@ -353,7 +283,7 @@ object YouTubeMusic {
         return config.clients
     }
 
-    /** YouTube wants a visitor id on player requests; one is good for a day. */
+    /** The player API wants a visitor id; one is good for a day. */
     private fun visitorData(): String? {
         val now = System.currentTimeMillis()
         visitor?.let { if (now - visitorAt < 86_400_000L) return it }
@@ -371,14 +301,14 @@ object YouTubeMusic {
     private fun postJson(url: String, body: JsonObject, headers: Map<String, String>): JsonObject {
         val req = Request.Builder().url(url).post(body.toString().toRequestBody(JSON_TYPE)).apply { headers.forEach { (k, v) -> header(k, v) } }.build()
         ApiClient.http.newCall(req).execute().use { res ->
-            if (!res.isSuccessful) throw ApiException(res.code, "youtube ${res.code}")
+            if (!res.isSuccessful) throw ApiException(res.code, "The music service answered ${res.code}")
             return json.parseToJsonElement(res.body?.string() ?: "{}") as? JsonObject ?: JsonObject(emptyMap())
         }
     }
 
-    /** Test seam: forget matches and benches so a test starts clean. */
+    /** Test seam: forget benches and memoised pages so a test starts clean. */
     fun resetForTest() {
-        matches.clear()
         benched.clear()
+        synchronized(cache) { cache.clear() }
     }
 }

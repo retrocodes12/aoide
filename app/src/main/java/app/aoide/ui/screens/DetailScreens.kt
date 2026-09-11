@@ -125,23 +125,24 @@ fun rememberImageTint(url: String?, fallback: Tint): Tint {
     return tint
 }
 
-private fun typeLabel(type: String?) = type?.let { if (it == "ALBUM") "Album" else it.lowercase().replaceFirstChar(Char::uppercase) } ?: "Album"
+private fun typeLabel(type: String?) = type?.let { if (it == "ALBUM") "Album" else if (it == "EP") "EP" else it.lowercase().replaceFirstChar(Char::uppercase) } ?: "Album"
 
 @Composable
-fun AlbumScreen(id: Long, onBack: () -> Unit, onNavigate: (String) -> Unit) {
+fun AlbumScreen(id: String, onBack: () -> Unit, onNavigate: (String) -> Unit) {
     val res by rememberResource("album", id) { Catalog.album(id) }
-    val similar by rememberResource("similar", id) { Catalog.similarAlbums(id) }
     val player by PlayerController.state.collectAsState()
     val lib by Library.state.collectAsState()
     val r = res
-    val album = (r as? Resource.Ready)?.value?.first
-    val tracks = (r as? Resource.Ready)?.value?.second.orEmpty()
-    val tint = remember(album?.vibrantColor) { Tint.of(album?.vibrantColor) }
-    LaunchedEffect(album) { album?.let { Library.recordAlbum(it); AppUi.page = tint } }
+    val page = (r as? Resource.Ready)?.value
+    val album = page?.album
+    val tracks = page?.tracks.orEmpty()
+    val tint = rememberImageTint(album?.cover?.let { Catalog.cover(it, 160) }, Tint.FALLBACK)
+    LaunchedEffect(album, tint) { album?.let { Library.recordAlbum(it); AppUi.page = tint } }
     val ctx = PlayContext("album", album?.title ?: "", "album/$id")
     val thisPlaying = player.context?.href == ctx.href && player.isPlaying
     if (r is Resource.Failed) return Column { BackRow(onBack); ErrorState(r.error, what = "album", onHome = { onNavigate("home") }) { r.reload() } }
     val albumArtist = album?.primaryArtist?.name
+    var moreAbout by remember { mutableStateOf(false) }
     val list = rememberLazyListState()
     Box {
     LazyColumn(Modifier.testTag("album_screen"), state = list) {
@@ -149,9 +150,8 @@ fun AlbumScreen(id: Long, onBack: () -> Unit, onNavigate: (String) -> Unit) {
             DetailHeader(
                 tint = tint, image = Catalog.cover(album?.cover, 640), title = album?.title ?: "",
                 artist = album?.primaryArtist?.let { a ->
-                    { Text(a.name, style = MaterialTheme.typography.titleMedium, color = Aoide.accent, modifier = Modifier.clickable { onNavigate("artist/${a.id}") }) }
+                    { Text(a.name, style = MaterialTheme.typography.titleMedium, color = Aoide.accent, modifier = Modifier.clickable(enabled = a.id.startsWith("UC")) { onNavigate("artist/${a.id}") }) }
                 },
-                badge = album?.let { a -> if (a.audioQuality == "HI_RES_LOSSLESS") "Hi-Res Lossless" else if (a.audioQuality == "LOSSLESS") "Lossless" else null },
                 meta = album?.let { a -> listOfNotNull(typeLabel(a.type), a.year.ifBlank { null }, plural(tracks.size, "song"), tracks.sumOf { it.duration }.takeIf { it > 0 }?.let(::formatLength)).joinToString(" · ") } ?: "Album",
                 onBack = onBack,
                 leftActions = {
@@ -171,22 +171,19 @@ fun AlbumScreen(id: Long, onBack: () -> Unit, onNavigate: (String) -> Unit) {
         }
         if (r is Resource.Loading) item { SkeletonRows(8) }
         items(tracks.withIndex().toList(), key = { it.value.id }) { (i, t) ->
-            // Apple Music's album view: the artist line only appears when a track's credits differ from the album's.
+            // The artist line only appears when a track's credits differ from the album's.
             val names = t.artistNames
             TrackRow(t, showArt = false, number = i + 1, subtitle = if (names == albumArtist) "" else names, onClick = { PlayerController.playTracks(tracks, i, ctx) })
         }
-        if (album != null) {
+        if (album != null && !album.description.isNullOrBlank()) {
             item {
-                Column(Modifier.padding(16.dp)) {
-                    album.releaseDate?.let { Text(prettyDate(it), style = MaterialTheme.typography.bodyMedium, color = Aoide.subdued) }
-                    album.copyright?.let { Text(if (it.startsWith("©") || it.startsWith("(")) it else "© $it", style = MaterialTheme.typography.bodySmall, color = Aoide.subdued) }
-                }
+                Text(album.description, style = MaterialTheme.typography.bodyMedium, color = Aoide.subdued, maxLines = if (moreAbout) Int.MAX_VALUE else 3, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(16.dp).clickable { moreAbout = !moreAbout }.testTag("album_about"))
             }
         }
-        val sim = (similar as? Resource.Ready)?.value.orEmpty()
-        if (sim.isNotEmpty()) {
+        val others = page?.others.orEmpty()
+        if (others.isNotEmpty()) {
             item { SectionTitle("You might also like") }
-            item { CardRow(sim.take(12), { it.id }) { a -> MediaCard(Catalog.cover(a.cover, 320), a.title, a.primaryArtist?.name) { onNavigate("album/${a.id}") } } }
+            item { CardRow(others.take(12), { it.id }) { a -> MediaCard(Catalog.cover(a.cover, 320), a.title, a.primaryArtist?.name ?: a.year) { onNavigate("album/${a.id}") } } }
         }
         item { Spacer(Modifier.height(160.dp)) }
     }
@@ -285,11 +282,11 @@ fun LocalPlaylistScreen(id: String, onBack: () -> Unit) {
                     pl.source?.let { src ->
                         Spacer(Modifier.width(8.dp))
                         // Imported lists remember where they came from: sync fetches the source again and appends what is new.
-                        IconDisc(Icons.Filled.Sync, if (syncing) "Syncing" else "Sync from ${if (src.startsWith("spotify")) "Spotify" else "YouTube Music"}", Modifier.testTag("sync_playlist"), tint = if (syncing) Aoide.accent else Color.White) {
+                        IconDisc(Icons.Filled.Sync, if (syncing) "Syncing" else "Sync from ${Importer.kindLabel(src.substringBefore(":"))}", Modifier.testTag("sync_playlist"), tint = if (syncing) Aoide.accent else Color.White) {
                             if (syncing) return@IconDisc
                             syncing = true
                             scope.launch {
-                                val r = runCatching { Importer.match(Importer.read(src.substringBefore(":"), src.substringAfter(":"))) }.getOrNull()
+                                val r = runCatching { Importer.import(src.substringBefore(":"), src.substringAfter(":")) }.getOrNull()
                                 syncing = false
                                 if (r == null) { Toasts.show("Couldn't reach the source playlist"); return@launch }
                                 val before = pl.tracks.size
@@ -347,99 +344,89 @@ fun LikedScreen(onBack: () -> Unit) {
 }
 
 @Composable
-fun ArtistScreen(id: Long, onBack: () -> Unit, onNavigate: (String) -> Unit) {
-    val artist by rememberResource("artist", id) { Catalog.artist(id) }
-    val disco by rememberResource("disco", id) { Catalog.discography(id) }
-    val a = (artist as? Resource.Ready)?.value
-    val top by rememberResource("top", id, a?.name) { a?.let { Catalog.topTracks(id, it.name) } ?: emptyList() }
-    val similar by rememberResource("simartists", id) { Catalog.similarArtists(id) }
-    val bio by rememberResource("bio", id) { Catalog.artistBio(id) }
+fun ArtistScreen(id: String, onBack: () -> Unit, onNavigate: (String) -> Unit) {
+    val res by rememberResource("artist", id) { Catalog.artist(id) }
+    val page = (res as? Resource.Ready)?.value
+    val a = page?.artist
     val player by PlayerController.state.collectAsState()
     val lib by Library.state.collectAsState()
-    var filter by remember { mutableStateOf("ALL") }
+    val scope = rememberCoroutineScope()
     var moreTop by remember { mutableStateOf(false) }
     var moreBio by remember { mutableStateOf(false) }
-    val tracks = (top as? Resource.Ready)?.value.orEmpty()
+    val tracks = page?.topTracks.orEmpty()
     // Artist pictures carry no vibrant colour; tint from the picture, else from the top song's record.
-    val tint = rememberImageTint(a?.picture?.let { Catalog.artistPicture(it, 160) }, Tint.of(tracks.firstOrNull()?.album?.vibrantColor))
+    val tint = rememberImageTint(a?.picture?.let { Catalog.artistPicture(it, 160) }, Tint.FALLBACK)
     LaunchedEffect(tint) { AppUi.page = tint }
-    val ar = artist
+    val ar = res
     if (ar is Resource.Failed) return Column { BackRow(onBack); ErrorState(ar.error, what = "artist", onHome = { onNavigate("home") }) { ar.reload() } }
     val ctx = PlayContext("artist", a?.name ?: "", "artist/$id")
     val thisPlaying = player.context?.href == ctx.href && player.isPlaying
-    val allAlbums = (disco as? Resource.Ready)?.value?.first.orEmpty()
-    val counts = allAlbums.groupingBy { it.type ?: "ALBUM" }.eachCount()
-    val albums = allAlbums.filter { filter == "ALL" || (it.type ?: "ALBUM") == filter }.sortedByDescending { it.releaseDate ?: "" }
     val list = rememberLazyListState()
     Box {
     LazyColumn(Modifier.testTag("artist_screen"), state = list) {
         item {
-            val h = if (a != null && a.picture == null) 240.dp else 320.dp
+            val h = 320.dp
             Box(Modifier.fillMaxWidth().height(h)) {
-                if (a?.picture != null || a == null) Artwork(Catalog.artistPicture(a?.picture, 750), Modifier.fillMaxWidth().height(h), RoundedCornerShape(0.dp))
+                if (a?.banner != null || a == null) Artwork(app.aoide.data.Music.imageWide(a?.banner, 1080, 720), Modifier.fillMaxWidth().height(h), RoundedCornerShape(0.dp))
                 else Box(Modifier.fillMaxWidth().height(h).background(Brush.verticalGradient(listOf(tint.accent.copy(alpha = .55f), Aoide.ground))), contentAlignment = Alignment.Center) {
                     Text(a.name.take(1).uppercase(), style = MaterialTheme.typography.displayLarge.copy(fontSize = 96.sp, fontWeight = FontWeight.Black), color = Color.White.copy(alpha = .08f))
                 }
                 Box(Modifier.fillMaxWidth().height(h).background(Brush.verticalGradient(listOf(Color.Transparent, Color.Black.copy(alpha = .35f), Aoide.ground))))
                 BackRow(onBack)
-                Text(a?.name ?: "", style = MaterialTheme.typography.displayLarge, color = Aoide.fg, maxLines = 2, overflow = TextOverflow.Ellipsis, modifier = Modifier.align(Alignment.BottomStart).padding(16.dp).testTag("detail_title"))
+                Column(Modifier.align(Alignment.BottomStart).padding(16.dp)) {
+                    Text(a?.name ?: "", style = MaterialTheme.typography.displayLarge, color = Aoide.fg, maxLines = 2, overflow = TextOverflow.Ellipsis, modifier = Modifier.testTag("detail_title"))
+                    a?.listeners?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = Aoide.fg.copy(alpha = .75f)) }
+                }
             }
         }
         item {
-            Row(Modifier.fillMaxWidth().padding(start = 16.dp, end = 12.dp, top = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+            Row(Modifier.fillMaxWidth().padding(start = 16.dp, end = 12.dp, top = 4.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 if (a != null) OutlinePill(if (lib.follows(a.id)) "Following" else "Follow", lib.follows(a.id)) { Toasts.show(if (Library.toggleArtist(a)) "Following ${a.name}" else "Unfollowed ${a.name}") }
+                if (a?.radio != null) OutlinePill("Radio") {
+                    scope.launch {
+                        val mix = runCatching { Catalog.radioPlaylist(a.radio) }.getOrDefault(emptyList())
+                        if (mix.isEmpty()) Toasts.show("Couldn't build the radio") else PlayerController.playTracks(mix, 0, PlayContext("radio", "${a.name} Radio", "artist/$id"))
+                    }
+                }
                 Spacer(Modifier.weight(1f))
                 IconButton(onClick = { if (!player.shuffle) PlayerController.toggleShuffle(); PlayerController.playTracks(tracks, tracks.indices.random(), ctx) }, enabled = tracks.isNotEmpty(), modifier = Modifier.semantics { contentDescription = "Shuffle play" }.testTag("shuffle")) { Icon(Icons.Filled.Shuffle, null, tint = Aoide.subdued, modifier = Modifier.size(28.dp)) }
-                Spacer(Modifier.width(8.dp))
                 PlayFab(playing = thisPlaying, enabled = tracks.isNotEmpty()) { if (player.context?.href == ctx.href && player.index >= 0) PlayerController.toggle() else PlayerController.playTracks(tracks, 0, ctx) }
             }
         }
         item { SectionTitle("Popular") }
-        when (val t = top) {
-            is Resource.Ready -> {
-                val shown = tracks.take(if (moreTop) 10 else 5)
-                items(shown.withIndex().toList(), key = { "p${it.value.id}" }) { (i, tr) ->
-                    TrackRow(tr, number = i + 1, subtitle = tr.album?.title, onClick = { PlayerController.playTracks(tracks, i, ctx) })
-                }
-                if (tracks.size > 5) item { TextButton(onClick = { moreTop = !moreTop }, modifier = Modifier.padding(horizontal = 8.dp)) { Text(if (moreTop) "Show less" else "See more", color = Aoide.subdued) } }
-                if (tracks.isEmpty() && t.value.isEmpty()) item { EmptyState("No popular songs found") }
+        if (page != null) {
+            val shown = tracks.take(if (moreTop) 10 else 5)
+            items(shown.withIndex().toList(), key = { "p${it.value.id}" }) { (i, tr) ->
+                TrackRow(tr, number = i + 1, subtitle = tr.plays?.let { p -> listOfNotNull(p, tr.album?.title?.takeIf { it.isNotBlank() }).joinToString(" · ") } ?: tr.album?.title, onClick = { PlayerController.playTracks(tracks, i, ctx) })
             }
-            else -> item { SkeletonRows(5) }
+            if (tracks.size > 5) item { TextButton(onClick = { moreTop = !moreTop }, modifier = Modifier.padding(horizontal = 8.dp)) { Text(if (moreTop) "Show less" else "See more", color = Aoide.subdued) } }
+            if (tracks.isEmpty()) item { EmptyState("No popular songs found") }
+        } else item { SkeletonRows(5) }
+        if (page != null && page.albums.isNotEmpty()) {
+            item { SectionTitle("Albums", onSeeAll = page.albumsMore?.let { (b, p) -> { onNavigate("disco/$b?p=${android.net.Uri.encode(p)}&t=${android.net.Uri.encode("Albums")}") } }) }
+            item { CardRow(page.albums, { it.id }) { al -> MediaCard(Catalog.cover(al.cover, 320), al.title, listOfNotNull(al.year.ifBlank { null }, typeLabel(al.type)).joinToString(" · ")) { onNavigate("album/${al.id}") } } }
         }
-        // Discography only when there is one; chips only for the release types that exist.
-        val d = disco
-        if (d is Resource.Loading || d is Resource.Failed || allAlbums.isNotEmpty()) {
-            item {
-                SectionTitle("Discography", action = {
-                    val label = listOfNotNull(counts["ALBUM"]?.let { plural(it, "album") }, counts["EP"]?.let { "$it EPs" }, counts["SINGLE"]?.let { plural(it, "single") }).joinToString(" · ")
-                    if (label.isNotBlank()) Text(label, style = MaterialTheme.typography.bodySmall, color = Aoide.subdued)
-                })
-            }
-            if (d is Resource.Failed) item { ErrorState(d.error) { d.reload() } }
-            else {
-                item {
-                    LazyRow(contentPadding = PaddingValues(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        items(listOf("ALL" to "All releases", "ALBUM" to "Albums", "EP" to "EPs", "SINGLE" to "Singles").filter { (k, _) -> k == "ALL" || d is Resource.Loading || (counts[k] ?: 0) > 0 }) { (k, l) -> Chip(l, filter == k) { filter = k } }
-                    }
-                }
-                item {
-                    Spacer(Modifier.height(12.dp))
-                    if (d is Resource.Loading) SkeletonCards()
-                    else CardRow(albums, { it.id }) { al -> MediaCard(Catalog.cover(al.cover, 320), al.title, listOfNotNull(al.year.ifBlank { null }, typeLabel(al.type)).joinToString(" · ")) { onNavigate("album/${al.id}") } }
-                }
-            }
+        if (page != null && page.singles.isNotEmpty()) {
+            item { SectionTitle("Singles & EPs", onSeeAll = page.singlesMore?.let { (b, p) -> { onNavigate("disco/$b?p=${android.net.Uri.encode(p)}&t=${android.net.Uri.encode("Singles & EPs")}") } }) }
+            item { CardRow(page.singles, { it.id }) { al -> MediaCard(Catalog.cover(al.cover, 320), al.title, listOfNotNull(al.year.ifBlank { null }, typeLabel(al.type)).joinToString(" · ")) { onNavigate("album/${al.id}") } } }
         }
-        val sim = (similar as? Resource.Ready)?.value.orEmpty()
+        if (page == null) item { Spacer(Modifier.height(12.dp)); SkeletonCards() }
+        val sim = page?.similar.orEmpty()
         if (sim.isNotEmpty()) {
             item { SectionTitle("Fans also like") }
-            item { CardRow(sim.take(12), { it.id }) { s -> MediaCard(Catalog.artistPicture(s.picture, 320), s.name, "Artist", round = true) { onNavigate("artist/${s.id}") } } }
+            item { CardRow(sim.take(12), { it.id }) { s -> MediaCard(Catalog.artistPicture(s.picture, 320), s.name, s.listeners ?: "Artist", round = true) { onNavigate("artist/${s.id}") } } }
         }
-        val b = (bio as? Resource.Ready)?.value.orEmpty()
+        val pls = page?.playlists.orEmpty()
+        if (pls.isNotEmpty()) {
+            item { SectionTitle("Playlists") }
+            item { CardRow(pls.take(12), { it.uuid }) { p -> MediaCard(Catalog.playlistImage(p, 320), p.title, p.creator?.name ?: "Playlist") { onNavigate("playlist/${p.uuid}") } } }
+        }
+        val b = a?.bio.orEmpty()
         if (b.isNotBlank()) {
             item { SectionTitle("About") }
             item {
                 Column(Modifier.padding(horizontal = 16.dp).fillMaxWidth().clip(RoundedCornerShape(8.dp)).background(Aoide.elevated).clickable { moreBio = !moreBio }) {
-                    if (a?.picture != null) Artwork(Catalog.artistPicture(a.picture, 480), Modifier.fillMaxWidth().height(200.dp), RoundedCornerShape(0.dp))
+                    if (a?.banner != null) Artwork(app.aoide.data.Music.imageWide(a.banner, 800, 400), Modifier.fillMaxWidth().height(200.dp), RoundedCornerShape(0.dp))
                     Text(b, style = MaterialTheme.typography.bodyMedium, color = Aoide.subdued, maxLines = if (moreBio) Int.MAX_VALUE else 4, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(16.dp))
                 }
             }
@@ -457,7 +444,7 @@ private fun keepAlbum(a: Album, t: Track) = a to t
 @Composable
 internal fun DownloadDisc(tracks: List<Track>) {
     val downloads by Downloads.all.collectAsState()
-    val ids = tracks.filter { it.id > 0 }.map { it.id }
+    val ids = tracks.filter { !it.isLocal }.map { it.id }
     val all = ids.isNotEmpty() && ids.all { downloads.containsKey(it) }
     val some = ids.any { downloads.containsKey(it) || Downloads.isQueued(it) }
     IconDisc(if (all) Icons.Filled.DownloadDone else Icons.Outlined.ArrowCircleDown, if (all) "Remove downloads" else "Download all", Modifier.testTag("download_all"), tint = if (all || some) Aoide.accent else Color.White) {

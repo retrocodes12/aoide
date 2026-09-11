@@ -24,13 +24,13 @@ data class LibraryState(
     val recentAlbums: List<Album> = emptyList(),
     val recentSearches: List<String> = emptyList(),
     /** Track id -> times played, for the history screen. */
-    val plays: Map<Long, Int> = emptyMap(),
+    val plays: Map<String, Int> = emptyMap(),
     /** Track id -> last played, epoch ms. */
-    val playedAt: Map<Long, Long> = emptyMap(),
+    val playedAt: Map<String, Long> = emptyMap(),
 ) {
-    fun isLiked(id: Long) = liked.any { it.id == id }
-    fun hasAlbum(id: Long) = albums.any { it.id == id }
-    fun follows(id: Long) = artists.any { it.id == id }
+    fun isLiked(id: String) = liked.any { it.id == id }
+    fun hasAlbum(id: String) = albums.any { it.id == id }
+    fun follows(id: String) = artists.any { it.id == id }
     fun hasPlaylist(uuid: String) = followedPlaylists.any { it.uuid == uuid }
 }
 
@@ -73,7 +73,7 @@ object Library {
 
     fun toggleArtist(a: Artist): Boolean {
         val has = _state.value.follows(a.id)
-        update { s -> s.copy(artists = if (has) s.artists.filter { it.id != a.id } else listOf(Artist(a.id, a.name, a.picture)) + s.artists) }
+        update { s -> s.copy(artists = if (has) s.artists.filter { it.id != a.id } else listOf(Artist(a.id, a.name, a.picture, a.banner)) + s.artists) }
         return !has
     }
 

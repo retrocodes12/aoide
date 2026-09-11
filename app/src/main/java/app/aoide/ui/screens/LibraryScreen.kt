@@ -134,7 +134,7 @@ private fun AddSheet(onDismiss: () -> Unit, onCreate: () -> Unit, onImport: () -
         Column(Modifier.navigationBarsPadding().padding(bottom = 16.dp)) {
             listOf(
                 Triple(Icons.Filled.Add, "Playlist" to "Build a playlist with songs from the catalogue", onCreate),
-                Triple(Icons.Filled.PlaylistAdd, "Import from Spotify or YouTube Music" to "Paste a playlist link; songs are matched here", onImport),
+                Triple(Icons.Filled.PlaylistAdd, "Import a playlist" to "Paste a playlist link from another service; songs are matched here", onImport),
             ).forEach { (icon, text, act) ->
                 Row(Modifier.fillMaxWidth().clickable(onClick = act).padding(horizontal = 20.dp, vertical = 16.dp).testTag("add_option"), verticalAlignment = Alignment.CenterVertically) {
                     Box(Modifier.size(44.dp).clip(CircleShape).background(Aoide.highlight), contentAlignment = Alignment.Center) { Icon(icon, null, tint = Aoide.fg) }

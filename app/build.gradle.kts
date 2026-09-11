@@ -25,8 +25,8 @@ android {
         applicationId = "app.aoide"
         minSdk = 26
         targetSdk = 35
-        versionCode = 7
-        versionName = "0.6.0"
+        versionCode = 8
+        versionName = "0.7.0"
         vectorDrawables.useSupportLibrary = true
     }
 
@@ -76,7 +76,7 @@ android {
     testOptions {
         unitTests {
             isIncludeAndroidResources = true
-            all { it.jvmArgs("-Xmx1300m", "-XX:MaxMetaspaceSize=768m", "-XX:ErrorFile=/tmp/aoide_hs_err_%p.log", "-Xss2m"); it.maxHeapSize = "1300m"; it.setForkEvery(1) }
+            all { it.jvmArgs("-Xmx1300m", "-XX:MaxMetaspaceSize=768m", "-XX:ErrorFile=/tmp/aoide_hs_err_%p.log", "-Xss2m"); it.maxHeapSize = "1300m"; it.setForkEvery(1); it.testLogging.showStandardStreams = true }
         }
     }
 }

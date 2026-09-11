@@ -15,9 +15,9 @@ import java.io.File
 
 /** Things a song can be put to beyond playing: sharing it, or making it the ringtone. */
 object TrackActions {
-    /** A song.link page resolves the TIDAL id to whatever service the friend uses. */
+    /** A universal link page resolves the song to whatever service the friend uses. */
     fun shareText(t: Track): String {
-        val link = if (t.id < 0) null else "https://song.link/https://tidal.com/browse/track/${t.id}"
+        val link = if (t.isLocal) null else "https://song.link/https://music.youtube.com/watch?v=${t.id}"
         return listOfNotNull("${t.title} — ${t.artistNames}", link).joinToString("\n")
     }
 

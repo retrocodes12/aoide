@@ -175,8 +175,13 @@ fun NowPlayingScreen(tint: Tint, onNavigate: (String) -> Unit) {
                 Column(Modifier.weight(1f)) {
                     Text(t.title, style = MaterialTheme.typography.headlineSmall.copy(fontSize = 22.sp), color = Aoide.fg, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.testTag("np_title"))
                     Text(t.artistNames, style = MaterialTheme.typography.bodyLarge, color = Aoide.fg.copy(alpha = .78f), maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.clickable { t.primaryArtist?.let { AppUi.nowPlayingOpen = false; onNavigate("artist/${it.id}") } })
-                    info?.label?.takeIf { it.isNotBlank() }?.let { label ->
-                        Box(Modifier.padding(top = 6.dp)) { QualityBadge(if (info.isPreview) "Preview" else if (label.startsWith("FLAC 24")) "Hi-Res Lossless" else if (label.startsWith("FLAC")) "Lossless" else label, onDark = !info.isPreview, accent = info.isPreview) }
+                    val losslessKnown by app.aoide.data.Lossless.known.collectAsState()
+                    Row(Modifier.padding(top = 6.dp), verticalAlignment = Alignment.CenterVertically) {
+                        info?.label?.takeIf { it.isNotBlank() }?.let { label ->
+                            QualityBadge(if (info.isPreview) "Preview" else if (label.startsWith("FLAC 24")) "Hi-Res Lossless" else if (label.startsWith("FLAC")) "Lossless" else label, onDark = !info.isPreview, accent = info.isPreview)
+                            Spacer(Modifier.width(6.dp))
+                        }
+                        if (losslessKnown[t.id]?.isNotEmpty() == true && info?.lossless != true) app.aoide.ui.components.HdMark()
                     }
                 }
                 LikeButton(t, size = 28.dp, tint = Aoide.fg.copy(alpha = .85f))

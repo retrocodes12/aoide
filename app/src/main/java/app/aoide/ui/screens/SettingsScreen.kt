@@ -1,39 +1,35 @@
 package app.aoide.ui.screens
 
-import androidx.compose.ui.semantics.stateDescription
-import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.offset
-import androidx.compose.foundation.layout.Box
+import android.Manifest
+import android.content.Intent
+import android.content.pm.PackageManager
+import android.os.Build
 import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material.icons.filled.Check
-import androidx.compose.ui.platform.LocalContext
-import android.Manifest
-import android.content.Intent
-import android.content.pm.PackageManager
-import android.os.Build
-import androidx.core.content.ContextCompat
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -48,11 +44,14 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.core.content.ContextCompat
 import app.aoide.data.ApiClient
 import app.aoide.data.Instance
 import app.aoide.data.Instances
@@ -76,7 +75,7 @@ fun SettingsScreen(onBack: () -> Unit, onNavigate: (String) -> Unit = {}) {
     val quality by Prefs.quality.collectAsState()
     val instances by Instances.list.collectAsState()
     val health by Instances.health.collectAsState()
-    val source by Instances.source.collectAsState()
+    val anyFull by Instances.anyFull.collectAsState()
     val player by PlayerController.state.collectAsState()
     val infos by StreamResolver.infos.collectAsState()
     val scope = rememberCoroutineScope()
@@ -86,11 +85,7 @@ fun SettingsScreen(onBack: () -> Unit, onNavigate: (String) -> Unit = {}) {
     var checking by remember { mutableStateOf<String?>(null) }
     // A benched mirror stays benched for 90 s; re-probe on entry so the labels describe now, not the last failure.
     LaunchedEffect(Unit) { Instances.probe() }
-    val down = remember(health, source) { Instances.mirrorsDown() }
-    val granted = player.current?.let { infos[it.id]?.quality }
-    val grantedLabel = granted?.let { g -> Quality.entries.find { it.name == g }?.label ?: g }
-    val grantedSource = player.current?.let { infos[it.id]?.source }
-    val yt by Prefs.youtubeSource.collectAsState()
+    val current = player.current?.let { infos[it.id] }
 
     fun test(inst: Instance) {
         checking = inst.url
@@ -100,11 +95,14 @@ fun SettingsScreen(onBack: () -> Unit, onNavigate: (String) -> Unit = {}) {
                 var last = "no answer"
                 repeat(3) {
                     runCatching {
-                        ApiClient.http.newCall(Request.Builder().url("${inst.url}/track/?id=58990486&quality=LOSSLESS").header("User-Agent", ApiClient.UA).build()).execute().use { res ->
+                        ApiClient.http.newCall(Request.Builder().url("${inst.url}/track/?id=${Instances.PROBE_TRACK}&quality=LOSSLESS").header("User-Agent", ApiClient.UA).build()).execute().use { res ->
                             if (res.isSuccessful) {
                                 val body = res.body?.string() ?: ""
                                 val full = runCatching { json.parseToJsonElement(body).jsonObject["data"]!!.jsonObject["assetPresentation"]!!.jsonPrimitive.content == "FULL" }.getOrDefault(false)
-                                if (body.contains("\"manifest\"")) return@withContext "${if (full) "full tracks" else "30 s previews"} · ${System.currentTimeMillis() - t0} ms"
+                                if (body.contains("\"manifest\"")) {
+                                    Instances.noteFull(inst.url, full)
+                                    return@withContext "${if (full) "full songs, lossless" else "30-second previews only"} · ${System.currentTimeMillis() - t0} ms"
+                                }
                                 last = "answering, but its upstream is down"
                             } else last = "HTTP ${res.code}"
                         }
@@ -125,28 +123,15 @@ fun SettingsScreen(onBack: () -> Unit, onNavigate: (String) -> Unit = {}) {
 
         UpdatesSection()
 
-        Section("Full songs", "Public mirrors only preview songs. With this on, Aoide finds the same recording on YouTube Music by artist, title and length, and streams it in full.")
-        ToggleRow("Full songs from YouTube Music", if (yt) "On. Opus at up to about 160 kbps. A song with no match plays as a 30-second preview." else "Off. Songs play as 30-second previews unless a mirror serves them in full.", yt, "youtube_toggle") { Prefs.setYouTubeSource(it); PlayerController.reloadCurrent() }
-
-        Section("Streaming quality", when {
-            yt -> "Full songs from YouTube Music play as Opus at up to about 160 kbps. Lossless and Hi-Res need a mirror backed by a subscription; Low picks the smaller stream."
-            down -> "Every mirror is down, so songs come straight from TIDAL as 30-second previews. Lossless and the AAC tiers still apply; Hi-Res needs a mirror."
-            else -> "Applies to the next song, and reloads the one playing."
-        })
+        Section("Streaming quality", if (anyFull) "Lossless and Hi-Res come from your lossless mirror when it has the song (those songs wear an HD mark); everything else plays as Opus from the music service. Applies to the next song, and reloads the one playing." else "Songs play as Opus from the music service. Lossless and Hi-Res need a lossless mirror, set up below; until then they pick the best Opus stream.")
         Quality.entries.forEach { q ->
-            val unavailable = down && q == Quality.HI_RES_LOSSLESS
-            val pick = { if (!unavailable) { Prefs.setQuality(q); PlayerController.reloadCurrent(); if (player.current != null) Toasts.show("${q.label}. Reloading the current song.") } }
-            // Spotify's shape: a full-width row, label at the page's 16 dp edge, an orange check on the right when chosen.
-            Row(Modifier.fillMaxWidth().clickable(enabled = !unavailable, onClick = pick).padding(horizontal = 16.dp, vertical = 10.dp).semantics { contentDescription = "Quality ${q.label}" }.testTag("quality_${q.name}"), verticalAlignment = Alignment.CenterVertically) {
+            val pick = { Prefs.setQuality(q); PlayerController.reloadCurrent(); if (player.current != null) Toasts.show("${q.label}. Reloading the current song.") }
+            // A full-width row, label at the page's 16 dp edge, an orange check on the right when chosen.
+            Row(Modifier.fillMaxWidth().clickable(onClick = pick).padding(horizontal = 16.dp, vertical = 10.dp).semantics { contentDescription = "Quality ${q.label}" }.testTag("quality_${q.name}"), verticalAlignment = Alignment.CenterVertically) {
                 Column(Modifier.weight(1f)) {
-                    Text(q.label, style = MaterialTheme.typography.bodyLarge, color = if (unavailable) Aoide.subdued else Aoide.fg)
+                    Text(q.label, style = MaterialTheme.typography.bodyLarge)
                     Text(
-                        when {
-                            unavailable -> "Not available on the TIDAL fallback"
-                            quality == q && grantedSource == "youtube" -> "${q.note}. This song is playing from YouTube Music as $granted."
-                            quality == q && granted != null && granted != q.name -> "${q.note}. This song is only available as $grantedLabel."
-                            else -> q.note
-                        },
+                        if (quality == q && current != null) "${q.note} This song is playing as ${current.label}${if (current.source == "mirror") " from your mirror" else ""}." else q.note,
                         style = MaterialTheme.typography.bodySmall, color = Aoide.subdued,
                     )
                 }
@@ -169,40 +154,32 @@ fun SettingsScreen(onBack: () -> Unit, onNavigate: (String) -> Unit = {}) {
             }
         }
 
-        Section("Instances", "Aoide reads the catalogue from hifi-api compatible mirrors, the same ones Monochrome lists, and fails over between them. Public mirrors usually serve 30-second previews; a mirror backed by a subscribed account serves full songs. Yours are tried first.")
-        if (down) {
-            Text(
-                "No mirror is answering right now. Aoide is browsing TIDAL's catalogue directly, previews only, and will switch back the moment a mirror returns.",
-                style = MaterialTheme.typography.bodySmall, color = Aoide.fg,
-                modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp).fillMaxWidth().clip(RoundedCornerShape(12.dp)).background(Aoide.accent.copy(alpha = .12f)).border(1.dp, Aoide.accent.copy(alpha = .35f), RoundedCornerShape(12.dp)).padding(12.dp).testTag("fallback_notice"),
-            )
-        }
+        Section("Lossless mirrors", "A catalogue mirror backed by a subscribed account serves songs as FLAC. Aoide finds each song on the mirror by artist, title and length, marks it HD, and plays the FLAC when your quality is Lossless or Hi-Res. Public mirrors only preview, which is no use here; add your own. Yours are tried first.")
         instances.forEach { inst ->
             Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp).clip(RoundedCornerShape(6.dp)).background(Aoide.highlight).padding(start = 12.dp, end = 4.dp, top = 8.dp, bottom = 8.dp).testTag("instance_row"), verticalAlignment = Alignment.CenterVertically) {
                 Column(Modifier.weight(1f)) {
                     Text(inst.host, style = MaterialTheme.typography.bodyMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
                     val cooling = health >= 0 && inst.isCooling
-                    val tags = listOfNotNull(if (inst.isUser) "yours" else "public", inst.version?.takeIf { it != "custom" }?.let { "v$it" }, if (cooling) "not answering" else null, inst.lastLatencyMs.takeIf { it >= 0 && !cooling }?.let { "$it ms" })
-                    Text(tags.joinToString(" · "), style = MaterialTheme.typography.bodySmall, color = Aoide.subdued, modifier = Modifier.testTag("instance_tags"))
+                    val tags = listOfNotNull(if (inst.isUser) "yours" else "public", inst.version?.takeIf { it != "custom" }?.let { "v$it" }, if (cooling) "not answering" else null, when (inst.full) { true -> "full songs"; false -> "previews only"; null -> null }, inst.lastLatencyMs.takeIf { it >= 0 && !cooling }?.let { "$it ms" })
+                    Text(tags.joinToString(" · "), style = MaterialTheme.typography.bodySmall, color = if (inst.full == true) Aoide.accent else Aoide.subdued, modifier = Modifier.testTag("instance_tags"))
                     val st = if (checking == inst.url) "checking…" else status[inst.url]
-                    if (st != null) Text(st, style = MaterialTheme.typography.bodySmall, color = if (st.contains("ms")) Aoide.accent else Aoide.subdued, modifier = Modifier.testTag("instance_status"))
+                    if (st != null) Text(st, style = MaterialTheme.typography.bodySmall, color = if (st.contains("lossless")) Aoide.accent else Aoide.subdued, modifier = Modifier.testTag("instance_status"))
                 }
                 OutlinePill("Test", enabled = checking == null) { if (checking == null) test(inst) }
                 IconButton(onClick = { Instances.remove(inst.url) }, modifier = Modifier.semantics { contentDescription = "Remove ${inst.host}" }) { Icon(Icons.Filled.Delete, null, tint = Aoide.subdued) }
             }
         }
         Row(Modifier.padding(horizontal = 16.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
-            app.aoide.ui.components.AoideField(url, { url = it }, "https://your-hifi-api.example", Modifier.weight(1f).testTag("instance_url"))
+            app.aoide.ui.components.AoideField(url, { url = it }, "https://your-mirror.example", Modifier.weight(1f).testTag("instance_url"))
             Spacer(Modifier.width(8.dp))
-            TextButton(onClick = { if (Instances.add(url)) { Toasts.show("Instance added. It will be tried first."); url = "" } else Toasts.show("Not a valid https origin, or already listed.") }, modifier = Modifier.testTag("instance_add")) { Text("Add", color = Aoide.accent) }
+            TextButton(onClick = { if (Instances.add(url)) { Toasts.show("Mirror added. It will be tried first."); url = ""; scope.launch { Instances.probe() } } else Toasts.show("Not a valid https origin, or already listed.") }, modifier = Modifier.testTag("instance_add")) { Text("Add", color = Aoide.accent) }
         }
         Row(Modifier.padding(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            OutlinePill("Refresh public list") { scope.launch { withContext(Dispatchers.IO) { Instances.refreshFromUptime() }; Instances.probe(); Toasts.show("Refreshed") } }
-            OutlinePill("Reset") { Instances.reset(); Toasts.show("Instances reset") }
+            OutlinePill("Reset") { Instances.reset(); Toasts.show("Mirrors reset") }
             OutlinePill("Clear cache") { ApiClient.clearCache(); Toasts.show("Cache cleared") }
         }
 
-        Section("About", "Aoide ${app.aoide.BuildConfig.VERSION_NAME}, the muse of song. A phone player in the shape of Spotify with Apple Music's polish. Liked songs, playlists, downloads and history stay on this phone; nothing leaves it.\n\nAlso on the car screen through Android Auto, and on the home screen as a widget (long-press the launcher, Widgets, Aoide).\n\nSources: Monochrome hifi-api mirrors and TIDAL's public catalogue for browsing, YouTube Music for full-length audio and downloads, lrclib.net for lyrics, Google Translate for translated lyrics. Not affiliated with Spotify, Apple, TIDAL, YouTube, Google or Monochrome.")
+        Section("About", "Aoide ${app.aoide.BuildConfig.VERSION_NAME}, the muse of song. A phone player in the shape of the big streaming apps, with the polish of the premium ones. Liked songs, playlists, downloads and history stay on this phone; nothing leaves it.\n\nAlso on the car screen through Android Auto, and on the home screen as a widget (long-press the launcher, Widgets, Aoide).\n\nCatalogue, songs and radio come from a public music service's own interfaces; lossless from any mirror you add; lyrics from a community database and the service; translations from a public translation service. Aoide is not affiliated with or endorsed by any of them.")
         Spacer(Modifier.height(160.dp))
     }
 }
@@ -211,11 +188,11 @@ fun SettingsScreen(onBack: () -> Unit, onNavigate: (String) -> Unit = {}) {
 internal fun Section(title: String, hint: String) {
     Column(Modifier.padding(horizontal = 16.dp).padding(top = 28.dp, bottom = 8.dp)) {
         Text(title, style = MaterialTheme.typography.titleLarge)
-        Text(hint, style = MaterialTheme.typography.bodySmall, color = Aoide.subdued, modifier = Modifier.padding(top = 4.dp))
+        if (hint.isNotBlank()) Text(hint, style = MaterialTheme.typography.bodySmall, color = Aoide.subdued, modifier = Modifier.padding(top = 4.dp))
     }
 }
 
-/** Spotify's switch: a pill that fills orange, a dark knob that slides across. */
+/** A switch: a pill that fills orange, a dark knob that slides across. */
 @Composable
 internal fun ToggleRow(title: String, body: String, on: Boolean, tag: String, onChange: (Boolean) -> Unit) {
     Row(

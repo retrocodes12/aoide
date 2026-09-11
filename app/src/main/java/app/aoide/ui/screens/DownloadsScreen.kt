@@ -158,7 +158,7 @@ fun DownloadsScreen(onBack: () -> Unit) {
                 }
             }
         }
-        if (tracks.isEmpty() && cur == null && queue.isEmpty()) item { EmptyState("Nothing saved yet", "Use ··· on any song, or the download arrow on an album or playlist. Downloads come from YouTube Music, so a song needs a full-length match.") }
+        if (tracks.isEmpty() && cur == null && queue.isEmpty()) item { EmptyState("Nothing saved yet", "Use ··· on any song, or the download arrow on an album or playlist.") }
         else if (tracks.isNotEmpty()) item { SectionTitle("Saved", Modifier.padding(top = 8.dp)) }
         items(tracks, key = { it.id }) { t ->
             TrackRow(t, subtitle = "${all[t.id]?.label ?: ""} · ${t.artistNames}", onClick = { PlayerController.playTracks(tracks, tracks.indexOf(t), ctx) })

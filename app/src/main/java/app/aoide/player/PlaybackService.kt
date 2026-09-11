@@ -89,7 +89,7 @@ class PlaybackService : MediaLibraryService() {
             Futures.immediateFuture(LibraryResult.ofItem(folder(ROOT, "Aoide", MediaMetadata.MEDIA_TYPE_FOLDER_MIXED), params))
 
         override fun onGetItem(session: MediaLibrarySession, browser: MediaSession.ControllerInfo, mediaId: String): ListenableFuture<LibraryResult<MediaItem>> {
-            val t = mediaId.toLongOrNull()?.let(TrackRegistry::get) ?: return Futures.immediateFuture(LibraryResult.ofError(SessionError.ERROR_BAD_VALUE))
+            val t = TrackRegistry.get(mediaId) ?: return Futures.immediateFuture(LibraryResult.ofError(SessionError.ERROR_BAD_VALUE))
             return Futures.immediateFuture(LibraryResult.ofItem(AoideMedia.mediaItemFor(t), null))
         }
 
@@ -114,7 +114,7 @@ class PlaybackService : MediaLibraryService() {
 
         override fun onSearch(session: MediaLibrarySession, browser: MediaSession.ControllerInfo, query: String, params: LibraryParams?): ListenableFuture<LibraryResult<Void>> {
             scope.launch {
-                val n = runCatching { Catalog.searchTracks(query, 20).items.filter { it.duration > 0 } }.getOrDefault(emptyList()).also { list -> searches[query] = list; list.forEach(TrackRegistry::put) }.size
+                val n = runCatching { Catalog.searchTracks(query, 20) }.getOrDefault(emptyList()).also { list -> searches[query] = list; list.forEach(TrackRegistry::put) }.size
                 session.notifySearchResultChanged(browser, query, n, params)
             }
             return Futures.immediateFuture(LibraryResult.ofVoid())
@@ -125,7 +125,7 @@ class PlaybackService : MediaLibraryService() {
             if (cached != null) return Futures.immediateFuture(LibraryResult.ofItemList(ImmutableList.copyOf(cached.map { AoideMedia.mediaItemFor(it) }), params))
             val future = SettableFuture.create<LibraryResult<ImmutableList<MediaItem>>>()
             scope.launch {
-                val list = runCatching { Catalog.searchTracks(query, 20).items.filter { it.duration > 0 } }.getOrDefault(emptyList())
+                val list = runCatching { Catalog.searchTracks(query, 20) }.getOrDefault(emptyList())
                 searches[query] = list
                 future.set(LibraryResult.ofItemList(ImmutableList.copyOf(list.map { AoideMedia.mediaItemFor(it) }), params))
             }

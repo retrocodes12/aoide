@@ -35,7 +35,7 @@ class PlayerExtras(context: Context, private val exo: ExoPlayer) : Player.Listen
     private var fadeJob: Job? = null
     private var mutedPause = false
     private var noisyPause = false
-    private var autoplayedFrom = -1L
+    private var autoplayedFrom = ""
     private val audio = context.getSystemService(Context.AUDIO_SERVICE) as AudioManager
     private val devices = object : AudioDeviceCallback() {
         override fun onAudioDevicesAdded(added: Array<out AudioDeviceInfo>) {
@@ -150,18 +150,13 @@ class PlayerExtras(context: Context, private val exo: ExoPlayer) : Player.Listen
     private fun maybeAutoplay() {
         if (!Prefs.autoplay.on || exo.repeatMode != Player.REPEAT_MODE_OFF) return
         if (exo.mediaItemCount == 0 || exo.currentMediaItemIndex != exo.mediaItemCount - 1) return
-        val id = exo.currentMediaItem?.mediaId?.toLongOrNull() ?: return
-        if (id < 0 || id == autoplayedFrom) return
+        val id = exo.currentMediaItem?.mediaId ?: return
+        if (id.startsWith("local:") || id == autoplayedFrom) return
         autoplayedFrom = id
-        val track = TrackRegistry.get(id)
         scope.launch {
-            val recs = withContext(Dispatchers.IO) {
-                val r = runCatching { Catalog.recommendations(id) }.getOrDefault(emptyList())
-                if (r.isNotEmpty()) r
-                else track?.primaryArtist?.let { a -> runCatching { Catalog.topTracks(a.id, a.name) }.getOrDefault(emptyList()) } ?: emptyList()
-            }
+            val recs = withContext(Dispatchers.IO) { runCatching { Catalog.radio(id) }.getOrDefault(emptyList()) }
             val have = (0 until exo.mediaItemCount).map { exo.getMediaItemAt(it).mediaId }.toSet()
-            val fresh = recs.filter { it.duration > 0 && it.id.toString() !in have }.distinctBy { it.id }.take(12)
+            val fresh = recs.filter { it.id !in have }.distinctBy { it.id }.take(15)
             if (fresh.isEmpty()) return@launch
             exo.addMediaItems(fresh.map { AoideMedia.toPlayable(AoideMedia.mediaItemFor(it, autoplay = true)) })
         }

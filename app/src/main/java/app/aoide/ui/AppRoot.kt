@@ -49,7 +49,6 @@ import androidx.compose.ui.semantics.testTagsAsResourceId
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.navigation.NavHostController
-import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
@@ -59,7 +58,6 @@ import app.aoide.data.Instances
 import app.aoide.data.Prefs
 import app.aoide.data.Updates
 import app.aoide.player.PlayerController
-import app.aoide.player.StreamResolver
 import app.aoide.ui.components.MiniPlayer
 import app.aoide.ui.components.TrackMenuSheet
 import app.aoide.ui.screens.AlbumScreen
@@ -79,6 +77,8 @@ import app.aoide.ui.screens.LocalFilesScreen
 import app.aoide.ui.screens.HistoryScreen
 import app.aoide.ui.screens.EqualizerScreen
 import app.aoide.ui.screens.ImportScreen
+import app.aoide.ui.screens.MoodScreen
+import app.aoide.ui.screens.DiscographyScreen
 import app.aoide.ui.components.SleepSheet
 import app.aoide.ui.theme.Aoide
 import kotlinx.coroutines.delay
@@ -97,8 +97,6 @@ fun AppRoot() {
     val backStack by nav.currentBackStackEntryAsState()
     val route = backStack?.destination?.route ?: "home"
     val player by PlayerController.state.collectAsState()
-    val infos by StreamResolver.infos.collectAsState()
-    val previewNoted by Prefs.previewNoted.collectAsState()
     val navigate: (String) -> Unit = { r -> nav.navigate(r) { launchSingleTop = true } }
 
     LaunchedEffect(Unit) {
@@ -109,15 +107,6 @@ fun AppRoot() {
     }
     val pending = TestNav.request
     LaunchedEffect(pending) { if (pending != null) { TestNav.request = null; navigate(pending) } }
-
-    val current = player.current
-    LaunchedEffect(current?.id, infos[current?.id ?: -1]) {
-        val info = current?.let { infos[it.id] }
-        if (info?.isPreview == true && !previewNoted) {
-            Prefs.notePreview()
-            Toasts.show(if (Prefs.youtubeSource.value) "No match on YouTube Music for this song, so it plays as a 30-second preview." else "Songs play as 30-second previews. Turn on full songs in Settings.")
-        }
-    }
 
     Box(Modifier.fillMaxSize().background(Aoide.ground).semantics { testTagsAsResourceId = true }) {
         // iOS's push: a detail screen slides in from the right over a fading parent, and slides back out on pop.
@@ -136,8 +125,10 @@ fun AppRoot() {
             composable("search?q={q}", arguments = listOf(navArgument("q") { nullable = true; defaultValue = null }), enterTransition = { tab }, exitTransition = { tabOut }, popEnterTransition = { tab }, popExitTransition = { tabOut }) { SearchScreen(it.arguments?.getString("q"), navigate) }
             composable("library", enterTransition = { tab }, exitTransition = { tabOut }, popEnterTransition = { tab }, popExitTransition = { tabOut }) { LibraryScreen(navigate) }
             composable("liked") { LikedScreen({ nav.popBackStack() }) }
-            composable("album/{id}", arguments = listOf(navArgument("id") { type = NavType.LongType })) { AlbumScreen(it.arguments!!.getLong("id"), { nav.popBackStack() }, navigate) }
-            composable("artist/{id}", arguments = listOf(navArgument("id") { type = NavType.LongType })) { ArtistScreen(it.arguments!!.getLong("id"), { nav.popBackStack() }, navigate) }
+            composable("album/{id}") { AlbumScreen(it.arguments!!.getString("id")!!, { nav.popBackStack() }, navigate) }
+            composable("artist/{id}") { ArtistScreen(it.arguments!!.getString("id")!!, { nav.popBackStack() }, navigate) }
+            composable("mood/{id}?p={p}", arguments = listOf(navArgument("p") { nullable = true; defaultValue = null })) { MoodScreen(it.arguments!!.getString("id")!!, it.arguments?.getString("p") ?: "", { nav.popBackStack() }, navigate) }
+            composable("disco/{id}?p={p}&t={t}", arguments = listOf(navArgument("p") { nullable = true; defaultValue = null }, navArgument("t") { nullable = true; defaultValue = null })) { DiscographyScreen(it.arguments!!.getString("id")!!, it.arguments?.getString("p") ?: "", it.arguments?.getString("t") ?: "Releases", { nav.popBackStack() }, navigate) }
             composable("playlist/{uuid}") { PlaylistScreen(it.arguments!!.getString("uuid")!!, { nav.popBackStack() }, navigate) }
             composable("local/{id}") { LocalPlaylistScreen(it.arguments!!.getString("id")!!, { nav.popBackStack() }) }
             composable("settings") { SettingsScreen({ nav.popBackStack() }, navigate) }

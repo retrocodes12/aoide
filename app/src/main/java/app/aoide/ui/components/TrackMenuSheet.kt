@@ -26,6 +26,7 @@ import androidx.compose.material.icons.filled.DownloadDone
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.RingVolume
 import androidx.compose.material.icons.filled.Bedtime
+import androidx.compose.material.icons.filled.Radio
 import androidx.compose.ui.platform.LocalContext
 import app.aoide.data.Downloads
 import androidx.compose.material3.HorizontalDivider
@@ -83,7 +84,8 @@ fun TrackMenuSheet(track: Track, onRemove: (() -> Unit)?, onNavigate: (String) -
                 MenuItem(Icons.Filled.PlaylistAdd, "Add to playlist") { pickPlaylist = true }
                 MenuItem(Icons.Filled.QueueMusic, "Add to queue") { PlayerController.enqueueLast(track); Toasts.show("Added to queue"); onDismiss() }
                 MenuItem(Icons.Filled.SkipNext, "Play next") { PlayerController.enqueueNext(track); Toasts.show("Playing next"); onDismiss() }
-                if (track.id > 0) {
+                if (!track.isLocal) MenuItem(Icons.Filled.Radio, "Start radio", subtitle = "Songs like this one, from the music service") { PlayerController.playRadio(track); onDismiss() }
+                if (!track.isLocal) {
                     if (kept != null) MenuItem(Icons.Filled.DownloadDone, "Remove download", subtitle = kept.label, tint = Aoide.accent) { Downloads.remove(track.id); Toasts.show("Download removed"); onDismiss() }
                     else if (Downloads.isQueued(track.id)) MenuItem(Icons.Outlined.ArrowCircleDown, "Downloading…", subtitle = "In the queue") { Downloads.cancel(track.id); Toasts.show("Download cancelled"); onDismiss() }
                     else MenuItem(Icons.Outlined.ArrowCircleDown, "Download", subtitle = "Keep the full song on this phone") { Downloads.enqueue(listOf(track)); Toasts.show("Downloading ${track.title}"); onDismiss() }

@@ -109,24 +109,26 @@ class Shots {
         settle(300)
     }
 
-    private fun album(): Pair<app.aoide.data.Album, List<Track>> = runBlocking { Catalog.album(ALBUM) }
+    private fun album(): Pair<app.aoide.data.Album, List<Track>> = runBlocking { Catalog.album(ALBUM).let { it.album to it.tracks } }
 
     private fun playing(tracks: List<Track>, title: String, status: Status = Status.PLAYING) {
-        StreamResolver.setInfoForTest(StreamInfo(tracks[0].id, isPreview = false, quality = "OPUS 139 kbps", bitDepth = null, sampleRate = 48_000, source = "youtube"))
+        StreamResolver.setInfoForTest(StreamInfo(tracks[0].id, isPreview = false, quality = "OPUS 139 kbps", bitDepth = null, sampleRate = 48_000, source = "full"))
+        app.aoide.data.Lossless.setKnownForTest(tracks[0].id, "1")
+        if (tracks.size > 2) app.aoide.data.Lossless.setKnownForTest(tracks[2].id, "2")
         PlayerController.setStateForTest(PlayerUiState(queue = tracks, index = 0, status = status, positionMs = 9_000, durationMs = 30_000, context = PlayContext("album", title, "album/$ALBUM")))
     }
 
     @Test fun home() {
         launch(); await { has("hero_card") }; settle(5000); shot("01-home")
         // Lazy lists compose nothing below the fold, so scroll to the shelves before looking for them.
-        rule.onNodeWithTag("home").performScrollToNode(hasTestTag("popular_card")); await { has("popular_card") }; settle(5000); shot("01b-home-shelves")
+        rule.onNodeWithTag("home").performScrollToNode(hasTestTag("home_card")); await { has("home_card") }; settle(5000); shot("01b-home-shelves")
     }
 
     @Test fun searchBrowse() { launch(); rule.onNodeWithTag("tab_search").performClick(); await { has("browse_tile") }; settle(1200); shot("02-search-browse") }
 
     @Test fun searchResults() {
         launch(); rule.onNodeWithTag("tab_search").performClick(); await { has("search_field") }
-        rule.onNodeWithTag("search_field").performTextInput("radiohead")
+        rule.onNodeWithTag("search_field").performTextInput("daft punk")
         settle(600)
         rule.onNodeWithTag("search_field").performImeAction()
         await(60_000) { has("track_row") || has("top_hit") }; settle(4000); shot("03-search-results")
@@ -227,8 +229,8 @@ class Shots {
     private fun navigate(route: String) { TestNav.go(route); settle(300) }
 
     companion object {
-        const val ALBUM = 61799588L // Radiohead, In Rainbows: a bright yellow tint, the hardest case for ink
-        const val ARTIST = 3816041L // Kendrick Lamar
-        const val PLAYLIST = "1b418bb8-90a7-4f87-901d-707993838346" // New arrivals
+        const val ALBUM = "MPREb_yXhSI4FCUo6" // a well-known 1997 rock record
+        const val ARTIST = "UCr_iyUANcn9OX_yy9piYoLw" // its band
+        const val PLAYLIST = "RDCLAK5uy_m_h-nx7OCFaq9AlyXv78lG0AuloqW_NUA" // a curated '90s list
     }
 }

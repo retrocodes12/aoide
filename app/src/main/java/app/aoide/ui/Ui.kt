@@ -96,3 +96,10 @@ fun <T> rememberResource(vararg keys: Any?, loader: suspend () -> T): androidx.c
 
 /** "1 song", "12 songs". */
 fun plural(n: Int, word: String): String = if (n == 1) "1 $word" else "$n ${word}s"
+
+/** Mood tiles carry their titles across navigation, which only passes ids. */
+object MoodTitles {
+    private val titles = HashMap<String, String>()
+    fun put(key: String, title: String) { titles[key] = title }
+    fun get(key: String): String? = titles[key]
+}

@@ -20,7 +20,6 @@ class AoideApp : Application() {
         Downloads.init(this)
         AudioEffects.load()
         Aoide.apply(Prefs.accent.value, Prefs.pureBlack.on)
-        CoroutineScope(Dispatchers.IO).launch { Instances.refreshFromUptime() }
         if (BuildConfig.DEBUG) runCatching {
             Class.forName("app.aoide.debug.DebugInit").getMethod("init", Application::class.java).invoke(null, this)
         }

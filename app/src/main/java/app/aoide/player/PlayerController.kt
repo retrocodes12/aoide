@@ -8,6 +8,7 @@ import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
 import androidx.media3.session.MediaController
 import androidx.media3.session.SessionToken
+import app.aoide.data.Catalog
 import app.aoide.data.Library
 import app.aoide.data.PlayContext
 import app.aoide.data.Prefs
@@ -67,7 +68,7 @@ object PlayerController {
     private var failStreak = 0
     private var sessionFile: File? = null
     private var lastSave = 0L
-    private var lastTintId = -1L
+    private var lastTintId = ""
     private var tick = 0
 
     private var appContext: Context? = null
@@ -222,7 +223,7 @@ object PlayerController {
 
     fun playTracks(tracks: List<Track>, start: Int, ctx: PlayContext?) {
         val c = controller ?: return
-        val playable = tracks.filter { it.duration > 0 }
+        val playable = tracks.filter { it.isLocal || it.duration >= 0 }
         if (playable.isEmpty()) return
         var list = playable
         var index = start.coerceIn(0, playable.lastIndex)
@@ -315,11 +316,11 @@ object PlayerController {
     }
 
     /** Move items one by one until the queue matches [ids] (items not in [ids] keep their relative order at the end). */
-    private fun reorderTo(c: MediaController, ids: List<Long>) {
-        val present = (0 until c.mediaItemCount).map { c.getMediaItemAt(it).mediaId.toLong() }.toSet()
-        val target = ids.filter { it in present } + (0 until c.mediaItemCount).map { c.getMediaItemAt(it).mediaId.toLong() }.filter { it !in ids }
+    private fun reorderTo(c: MediaController, ids: List<String>) {
+        val present = (0 until c.mediaItemCount).map { c.getMediaItemAt(it).mediaId }.toSet()
+        val target = ids.filter { it in present } + (0 until c.mediaItemCount).map { c.getMediaItemAt(it).mediaId }.filter { it !in ids }
         for ((to, id) in target.withIndex()) {
-            val from = (0 until c.mediaItemCount).first { c.getMediaItemAt(it).mediaId.toLong() == id }
+            val from = (0 until c.mediaItemCount).first { c.getMediaItemAt(it).mediaId == id }
             if (from != to) c.moveMediaItem(from, to)
         }
     }
@@ -355,7 +356,7 @@ object PlayerController {
     fun removeAt(i: Int) {
         val c = controller ?: return
         if (i == c.currentMediaItemIndex || i !in 0 until c.mediaItemCount) return
-        val id = c.getMediaItemAt(i).mediaId.toLong()
+        val id = c.getMediaItemAt(i).mediaId
         c.removeMediaItem(i)
         unshuffled = unshuffled?.filter { it.id != id }
         sync()
@@ -404,6 +405,15 @@ object PlayerController {
     }
 
     fun quality() = Prefs.quality.value
+
+    /** The service's own mix for a song: the song first, then songs like it. */
+    fun playRadio(t: Track) {
+        scope.launch {
+            val list = runCatching { Catalog.radio(t.id) }.getOrDefault(emptyList()).ifEmpty { listOf(t) }
+            Toasts.show(if (list.size > 1) "Playing ${t.title} radio" else "Couldn't build a radio for this song")
+            playTracks(list, 0, PlayContext("radio", "${t.title} Radio"))
+        }
+    }
 
     /** Test seam: lets a screenshot test paint the player without audio. */
     fun setStateForTest(s: PlayerUiState) {

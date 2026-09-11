@@ -101,7 +101,7 @@ internal fun FeatureRows(onNavigate: (String) -> Unit) {
     FeatureRow(Icons.Filled.Download, "Downloads", "${plural(downloads.size, "song")} · ${formatBytes(downloads.values.sumOf { it.bytes })}", "row_downloads") { onNavigate("downloads") }
     FeatureRow(Icons.Filled.History, "History", "${plural(lib.plays.values.sum(), "play")} on this phone", "row_history") { onNavigate("history") }
     FeatureRow(Icons.Filled.FolderOpen, "On this phone", "Music files already on the device", "row_local") { onNavigate("local_files") }
-    FeatureRow(Icons.Filled.PlaylistAdd, "Import a playlist", "From Spotify or YouTube Music, by link", "row_import") { onNavigate("import") }
+    FeatureRow(Icons.Filled.PlaylistAdd, "Import a playlist", "From another music service, by link", "row_import") { onNavigate("import") }
 }
 
 @Composable

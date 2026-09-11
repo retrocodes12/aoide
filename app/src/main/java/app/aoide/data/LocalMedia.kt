@@ -13,9 +13,9 @@ import kotlinx.coroutines.withContext
 object LocalMedia {
     const val SCHEME = "content://media/external/audio/media/"
 
-    fun isLocal(trackId: Long) = trackId < 0
+    fun isLocal(trackId: String) = trackId.startsWith("local:")
 
-    fun uriFor(trackId: Long): String = SCHEME + (-trackId)
+    fun uriFor(trackId: String): String = SCHEME + trackId.removePrefix("local:")
 
     suspend fun scan(context: Context): List<Track> = withContext(Dispatchers.IO) {
         val out = ArrayList<Track>()
@@ -40,13 +40,13 @@ object LocalMedia {
                     val artistName = c.getString(artist)?.takeIf { it != "<unknown>" } ?: "Unknown artist"
                     out.add(
                         Track(
-                            id = -mediaId,
+                            id = "local:$mediaId",
                             title = c.getString(title) ?: "Untitled",
                             duration = (c.getLong(duration) / 1000).toInt(),
                             trackNumber = c.getInt(trackNo).takeIf { it > 0 },
-                            artist = ArtistRef(-c.getLong(artistId), artistName),
-                            artists = listOf(ArtistRef(-c.getLong(artistId), artistName)),
-                            album = AlbumRef(-c.getLong(albumId), c.getString(album) ?: "", cover = art),
+                            artist = ArtistRef("local-artist:${c.getLong(artistId)}", artistName),
+                            artists = listOf(ArtistRef("local-artist:${c.getLong(artistId)}", artistName)),
+                            album = AlbumRef("local-album:${c.getLong(albumId)}", c.getString(album) ?: "", cover = art),
                         ),
                     )
                 }
