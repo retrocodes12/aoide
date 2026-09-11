@@ -120,7 +120,8 @@ fun NowPlayingScreen(tint: Tint, onNavigate: (String) -> Unit) {
     Box(Modifier.fillMaxSize().offset { IntOffset(0, drag.coerceAtLeast(0f).roundToInt()) }.background(tint.accent).testTag("now_playing")) {
         // Blurred artwork backdrop (a no-op below API 31, where the tint alone carries it)
         Artwork(art, Modifier.fillMaxSize().blur(70.dp), RoundedCornerShape(0.dp))
-        Box(Modifier.fillMaxSize().background(Brush.verticalGradient(listOf(Color.Black.copy(alpha = .28f), Color.Black.copy(alpha = .62f), Aoide.ground.copy(alpha = .96f)))))
+        // The scrim is what makes white ink safe over any cover: 50% black at the top, 72% by the title, ground below.
+        Box(Modifier.fillMaxSize().background(Brush.verticalGradient(listOf(Color.Black.copy(alpha = .5f), Color.Black.copy(alpha = .72f), Aoide.ground.copy(alpha = .97f)))))
         Column(
             Modifier.fillMaxSize()
                 .pointerInput(Unit) {
@@ -202,19 +203,20 @@ fun NowPlayingScreen(tint: Tint, onNavigate: (String) -> Unit) {
             }
             // Lyrics card, as Spotify shows under the controls
             Column(
-                Modifier.padding(horizontal = 16.dp, vertical = 12.dp).fillMaxWidth().clip(RoundedCornerShape(12.dp)).background(tint.accent).background(Color.Black.copy(alpha = .22f)).clickable { AppUi.lyricsOpen = true }.padding(18.dp).testTag("lyrics_card"),
+                Modifier.padding(horizontal = 16.dp, vertical = 12.dp).fillMaxWidth().clip(RoundedCornerShape(12.dp)).background(tint.accent).clickable { AppUi.lyricsOpen = true }.padding(18.dp).testTag("lyrics_card"),
             ) {
-                Text("Lyrics", style = MaterialTheme.typography.titleSmall, color = Aoide.fg)
+                // The card is a slice of the lyrics screen: the tint's own solved ink, never white on colour.
+                Text("Lyrics", style = MaterialTheme.typography.titleSmall, color = tint.soft)
                 Spacer(Modifier.height(10.dp))
                 when (val l = lyrics) {
                     is Resource.Ready -> {
                         // Same rule as the lyrics screen: synced lines when there are any, else plain text, else nothing.
                         val lines = lyricLines(l.value)
-                        if (lines.isEmpty()) Text("We don't have lyrics for this one.", style = MaterialTheme.typography.bodyMedium, color = Aoide.fg.copy(alpha = .85f))
-                        else lines.take(4).forEach { Text(it, style = MaterialTheme.typography.titleLarge, color = Aoide.fg, maxLines = 1, overflow = TextOverflow.Ellipsis) }
+                        if (lines.isEmpty()) Text("We don't have lyrics for this one.", style = MaterialTheme.typography.bodyMedium, color = tint.ink)
+                        else lines.take(4).forEach { Text(it, style = MaterialTheme.typography.titleLarge, color = tint.ink, maxLines = 1, overflow = TextOverflow.Ellipsis) }
                     }
-                    is Resource.Loading -> Text("Looking for lyrics…", style = MaterialTheme.typography.bodyMedium, color = Aoide.fg.copy(alpha = .85f))
-                    is Resource.Failed -> Text("Lyrics unavailable", style = MaterialTheme.typography.bodyMedium, color = Aoide.fg.copy(alpha = .85f))
+                    is Resource.Loading -> Text("Looking for lyrics…", style = MaterialTheme.typography.bodyMedium, color = tint.ink)
+                    is Resource.Failed -> Text("Lyrics unavailable", style = MaterialTheme.typography.bodyMedium, color = tint.ink)
                 }
             }
             Spacer(Modifier.height(24.dp))

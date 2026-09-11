@@ -43,7 +43,7 @@ object ApiClient {
 
     private const val TTL = 15 * 60_000L
     private data class Entry(val at: Long, val body: String)
-    private val cache = HashMap<String, Entry>()
+    private val cache = LinkedHashMap<String, Entry>()
     private val inflight = HashMap<String, Deferred<String>>()
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
@@ -62,7 +62,7 @@ object ApiClient {
         if (Instances.allCooling()) {
             // Every mirror is benched: browse straight from TIDAL, keep the mirrors for later.
             runCatching { runBlocking { nativeFallback(path) } }.getOrNull()?.let { body ->
-                synchronized(cache) { cache[path] = Entry(System.currentTimeMillis(), body) }
+                synchronized(cache) { trim(); cache[path] = Entry(System.currentTimeMillis(), body) }
                 Instances.noteSource("tidal")
                 return body
             }
@@ -97,7 +97,7 @@ object ApiClient {
                             return@use
                         }
                         Instances.reportSuccess(inst.url, System.currentTimeMillis() - t0)
-                        synchronized(cache) { cache[path] = Entry(System.currentTimeMillis(), body) }
+                        synchronized(cache) { trim(); cache[path] = Entry(System.currentTimeMillis(), body) }
                         Instances.noteSource("mirror")
                         return body
                     }
@@ -113,7 +113,7 @@ object ApiClient {
         // Every mirror failed: fall back to TIDAL's public catalogue for browsing routes.
         try {
             val body = runBlocking { nativeFallback(path) }
-            synchronized(cache) { cache[path] = Entry(System.currentTimeMillis(), body) }
+            synchronized(cache) { trim(); cache[path] = Entry(System.currentTimeMillis(), body) }
             Instances.noteSource("tidal")
             return body
         } catch (e: ApiException) {
@@ -126,6 +126,14 @@ object ApiClient {
     }
 
     fun clearCache() = synchronized(cache) { cache.clear() }
+
+    /** Called on every insert: past 200 entries, drop whatever has expired, then the oldest. */
+    private fun trim() {
+        if (cache.size < 200) return
+        val now = System.currentTimeMillis()
+        cache.entries.removeIf { now - it.value.at > TTL }
+        while (cache.size >= 200) cache.remove(cache.keys.first())
+    }
 
     /* ---------- Native TIDAL fallback ----------
      * Monochrome itself queries api.tidal.com with TIDAL's public browser client id. Client-credentials
@@ -165,7 +173,7 @@ object ApiClient {
             http.newCall(Request.Builder().url(url).header("Authorization", "Bearer $tok").build()).execute().use { res ->
                 if (!res.isSuccessful) throw ApiException(res.code, "tidal ${res.code}")
                 val body = res.body!!.string()
-                synchronized(cache) { cache[key] = Entry(System.currentTimeMillis(), body) }
+                synchronized(cache) { trim(); cache[key] = Entry(System.currentTimeMillis(), body) }
                 body
             }
         }

@@ -25,7 +25,6 @@ import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
-import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -56,7 +55,7 @@ fun TrackMenuSheet(track: Track, onRemove: (() -> Unit)?, onNavigate: (String) -
     val liked = lib.isLiked(track.id)
     var pickPlaylist by remember { mutableStateOf(false) }
     var newName by remember { mutableStateOf("") }
-    ModalBottomSheet(onDismissRequest = onDismiss, containerColor = Aoide.elevated2, dragHandle = null, modifier = Modifier.testTag("track_menu")) {
+    ModalBottomSheet(onDismissRequest = onDismiss, containerColor = Aoide.elevated2, scrimColor = SheetScrim, dragHandle = null, modifier = Modifier.testTag("track_menu")) {
         Column(Modifier.verticalScroll(rememberScrollState()).navigationBarsPadding().padding(bottom = 16.dp)) {
             Row(Modifier.padding(20.dp), verticalAlignment = Alignment.CenterVertically) {
                 Artwork(Catalog.cover(track.album?.cover, 160), Modifier.size(56.dp))
@@ -84,12 +83,13 @@ fun TrackMenuSheet(track: Track, onRemove: (() -> Unit)?, onNavigate: (String) -
                         Library.addToPlaylist(p.id, track); Toasts.show("Added to ${p.title}"); onDismiss()
                     }
                 }
+                val create = {
+                    val p = Library.createPlaylist(newName.ifBlank { "My Playlist #${lib.playlists.size + 1}" }, listOf(track))
+                    Toasts.show("Added to ${p.title}"); onDismiss()
+                }
                 Row(Modifier.padding(horizontal = 20.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
-                    OutlinedTextField(newName, { newName = it }, placeholder = { Text("New playlist name") }, singleLine = true, modifier = Modifier.weight(1f).testTag("new_playlist_name"))
-                    TextButton(onClick = {
-                        val p = Library.createPlaylist(newName.ifBlank { "My Playlist #${lib.playlists.size + 1}" }, listOf(track))
-                        Toasts.show("Added to ${p.title}"); onDismiss()
-                    }, modifier = Modifier.testTag("new_playlist_create")) { Text("Create", color = Aoide.accent) }
+                    AoideField(newName, { newName = it }, "New playlist name", Modifier.weight(1f).testTag("new_playlist_name"), onDone = create)
+                    TextButton(onClick = create, modifier = Modifier.testTag("new_playlist_create")) { Text("Create", color = Aoide.accent) }
                 }
             }
             Spacer(Modifier.height(8.dp))

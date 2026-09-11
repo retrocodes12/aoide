@@ -84,7 +84,7 @@ fun DetailHeader(
             }
             if (!description.isNullOrBlank()) Text(description, style = MaterialTheme.typography.bodySmall, color = Aoide.subdued, maxLines = 3, overflow = TextOverflow.Ellipsis, textAlign = TextAlign.Center, modifier = Modifier.padding(top = 8.dp))
         }
-        Row(Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 18.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+        Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 18.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
             PillButton(if (playing) "Pause" else "Play", if (playing) Icons.Filled.Pause else Icons.Filled.PlayArrow, filled = true, enabled = canPlay, modifier = Modifier.weight(1f).testTag("play_fab"), onClick = onPlay)
             PillButton("Shuffle", Icons.Filled.Shuffle, filled = false, enabled = canPlay && shuffle != null, modifier = Modifier.weight(1f).testTag("shuffle")) { shuffle?.invoke() }
         }
@@ -118,7 +118,7 @@ fun PillButton(text: String, icon: androidx.compose.ui.graphics.vector.ImageVect
 @Composable
 fun QualityBadge(text: String, modifier: Modifier = Modifier, onDark: Boolean = false, accent: Boolean = false) {
     val bg = when {
-        accent -> Aoide.accent.copy(alpha = .2f)
+        accent -> Color.Black.copy(alpha = .45f)
         onDark -> Color.Black.copy(alpha = .35f)
         else -> Aoide.subdued.copy(alpha = .22f)
     }

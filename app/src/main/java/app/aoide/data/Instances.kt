@@ -57,7 +57,8 @@ object Instances {
 
     fun normalize(url: String): String? {
         val t = url.trim().trimEnd('/')
-        return if (Regex("^https?://[^\\s/]+$", RegexOption.IGNORE_CASE).matches(t)) t else null
+        // The manifest forbids cleartext, so an http:// mirror would be accepted and then fail every request silently.
+        return if (Regex("^https://[^\\s/]+$", RegexOption.IGNORE_CASE).matches(t)) t else null
     }
 
     private fun dedupe(items: List<Instance>): List<Instance> {
@@ -111,8 +112,10 @@ object Instances {
     }
 
     fun reset() {
-        _list.value = DEFAULTS
+        // Fresh objects: the defaults are shared instances whose bench state would otherwise survive a reset.
+        _list.value = DEFAULTS.map { it.copy() }
         persist()
+        bump()
     }
 
     fun reportSuccess(url: String, latencyMs: Long) {

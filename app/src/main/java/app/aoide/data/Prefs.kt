@@ -29,6 +29,8 @@ object Prefs {
         sp.edit().putBoolean("preview_noted", true).apply()
     }
 
+    fun getLong(key: String): Long = sp.getLong(key, -1L)
+    fun putLong(key: String, value: Long) = sp.edit().putLong(key, value).apply()
     fun getString(key: String): String? = sp.getString(key, null)
     fun putString(key: String, value: String?) = sp.edit().putString(key, value).apply()
 }

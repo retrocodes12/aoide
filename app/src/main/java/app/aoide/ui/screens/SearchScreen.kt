@@ -40,6 +40,8 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.rotate
+import androidx.compose.foundation.layout.offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.platform.testTag
@@ -129,7 +131,8 @@ fun SearchScreen(initialQuery: String?, onNavigate: (String) -> Unit) {
                             Box(
                                 Modifier.weight(1f).aspectRatio(1.8f).clip(RoundedCornerShape(8.dp)).background(Color(color)).clickable { query = t; tab = Tab.PLAYLISTS }.padding(12.dp).testTag("browse_tile"),
                             ) {
-                                Box(Modifier.size(90.dp).align(Alignment.BottomEnd).padding(end = 0.dp).clip(CircleShape).background(Color.Black.copy(alpha = .25f)))
+                                // Spotify's tilted record peeking from the corner, in the tile's own darker shade
+                                Box(Modifier.size(64.dp).align(Alignment.BottomEnd).offset(x = 14.dp, y = 10.dp).rotate(25f).clip(RoundedCornerShape(6.dp)).background(Color.Black.copy(alpha = .28f)))
                                 Text(label, style = MaterialTheme.typography.titleLarge, color = Color.White)
                             }
                         }

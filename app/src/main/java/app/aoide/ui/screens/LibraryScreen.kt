@@ -97,11 +97,8 @@ fun LibraryScreen(onNavigate: (String) -> Unit) {
         item { Spacer(Modifier.height(160.dp)) }
     }
     if (creating) {
-        var name by remember { mutableStateOf("My Playlist #${lib.playlists.size + 1}") }
-        val create = { val p = Library.createPlaylist(name); creating = false; Toasts.show("Created ${p.title}"); onNavigate("local/${p.id}") }
-        AlertDialog(onDismissRequest = { creating = false }, containerColor = Aoide.elevated2, title = { Text("Give your playlist a name") },
-            text = { OutlinedTextField(name, { name = it }, singleLine = true, keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done), keyboardActions = KeyboardActions(onDone = { create() }), modifier = Modifier.testTag("playlist_name")) },
-            confirmButton = { TextButton(onClick = create, modifier = Modifier.testTag("playlist_create")) { Text("Create", color = Aoide.accent) } },
-            dismissButton = { TextButton(onClick = { creating = false }) { Text("Cancel", color = Aoide.subdued) } })
+        app.aoide.ui.components.NameSheet("Give your playlist a name", "My Playlist #${lib.playlists.size + 1}", "Create", "playlist_name", "playlist_create", onDismiss = { creating = false }) { name ->
+            val p = Library.createPlaylist(name); creating = false; Toasts.show("Created ${p.title}"); onNavigate("local/${p.id}")
+        }
     }
 }

@@ -72,6 +72,7 @@ object PlayerController {
     private var sessionFile: File? = null
     private var lastSave = 0L
     private var lastTintId = -1L
+    private var tick = 0
 
     fun connect(appContext: Context) {
         if (controller != null) return
@@ -168,6 +169,8 @@ object PlayerController {
                 val dur = if (c.duration > 0) c.duration else 0L
                 _state.value = _state.value.copy(positionMs = c.currentPosition.coerceAtLeast(0), durationMs = dur)
                 saveSession()
+                // The full session is throttled to every 4 s; the position alone is cheap enough to note every second.
+                if (tick++ % 4 == 0) _state.value.current?.let { Prefs.putLong("pos:${it.id}", _state.value.positionMs) }
                 delay(250)
             }
         }
@@ -210,7 +213,8 @@ object PlayerController {
         if (s.queue.isEmpty() || s.index !in s.queue.indices) return
         context = s.context
         pendingShuffle = s.shuffle
-        c.setMediaItems(s.queue.map(::mediaItem), s.index, s.positionMs)
+        val latest = Prefs.getLong("pos:${s.queue[s.index].id}").takeIf { it >= 0 } ?: s.positionMs
+        c.setMediaItems(s.queue.map(::mediaItem), s.index, maxOf(s.positionMs, latest))
         c.repeatMode = s.repeat
         c.playWhenReady = false
         _state.value = _state.value.copy(shuffle = s.shuffle, durationMs = 0)

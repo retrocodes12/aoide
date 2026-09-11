@@ -21,9 +21,13 @@ import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.RadioButton
-import androidx.compose.material3.RadioButtonDefaults
+import androidx.compose.material.icons.filled.Check
+import androidx.compose.ui.platform.LocalContext
+import android.Manifest
+import android.content.Intent
+import android.content.pm.PackageManager
+import android.os.Build
+import androidx.core.content.ContextCompat
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -70,6 +74,7 @@ fun SettingsScreen(onBack: () -> Unit) {
     val player by PlayerController.state.collectAsState()
     val infos by StreamResolver.infos.collectAsState()
     val scope = rememberCoroutineScope()
+    val context = LocalContext.current
     var url by remember { mutableStateOf("") }
     val status = remember { mutableStateMapOf<String, String>() }
     var checking by remember { mutableStateOf<String?>(null) }
@@ -114,10 +119,10 @@ fun SettingsScreen(onBack: () -> Unit) {
         Quality.entries.forEach { q ->
             val unavailable = down && q == Quality.HI_RES_LOSSLESS
             val pick = { if (!unavailable) { Prefs.setQuality(q); PlayerController.reloadCurrent(); if (player.current != null) Toasts.show("${q.label}. Reloading the current song.") } }
-            Row(Modifier.fillMaxWidth().clickable(enabled = !unavailable, onClick = pick).padding(horizontal = 12.dp, vertical = 6.dp).semantics { contentDescription = "Quality ${q.label}" }.testTag("quality_${q.name}"), verticalAlignment = Alignment.CenterVertically) {
-                RadioButton(selected = quality == q, onClick = pick, enabled = !unavailable, colors = RadioButtonDefaults.colors(selectedColor = Aoide.accent, unselectedColor = Aoide.subdued, disabledUnselectedColor = Aoide.muted))
-                Column {
-                    Text(q.label, style = MaterialTheme.typography.bodyLarge, color = if (unavailable) Aoide.muted else Aoide.fg)
+            // Spotify's shape: a full-width row, label at the page's 16 dp edge, an orange check on the right when chosen.
+            Row(Modifier.fillMaxWidth().clickable(enabled = !unavailable, onClick = pick).padding(horizontal = 16.dp, vertical = 10.dp).semantics { contentDescription = "Quality ${q.label}" }.testTag("quality_${q.name}"), verticalAlignment = Alignment.CenterVertically) {
+                Column(Modifier.weight(1f)) {
+                    Text(q.label, style = MaterialTheme.typography.bodyLarge, color = if (unavailable) Aoide.subdued else Aoide.fg)
                     Text(
                         when {
                             unavailable -> "Not available on the TIDAL fallback"
@@ -126,6 +131,16 @@ fun SettingsScreen(onBack: () -> Unit) {
                         },
                         style = MaterialTheme.typography.bodySmall, color = Aoide.subdued,
                     )
+                }
+                if (quality == q) Icon(Icons.Filled.Check, null, tint = Aoide.accent, modifier = Modifier.padding(start = 12.dp))
+            }
+        }
+
+        if (Build.VERSION.SDK_INT >= 33 && ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
+            Section("Notifications", "Notifications are off, so there is no media notification and no lock-screen control. Turn them on in the system settings.")
+            Row(Modifier.padding(horizontal = 16.dp)) {
+                OutlinePill("Open notification settings") {
+                    context.startActivity(Intent(android.provider.Settings.ACTION_APP_NOTIFICATION_SETTINGS).putExtra(android.provider.Settings.EXTRA_APP_PACKAGE, context.packageName))
                 }
             }
         }
@@ -153,7 +168,7 @@ fun SettingsScreen(onBack: () -> Unit) {
             }
         }
         Row(Modifier.padding(horizontal = 16.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
-            OutlinedTextField(url, { url = it }, placeholder = { Text("https://your-hifi-api.example") }, singleLine = true, modifier = Modifier.weight(1f).testTag("instance_url"))
+            app.aoide.ui.components.AoideField(url, { url = it }, "https://your-hifi-api.example", Modifier.weight(1f).testTag("instance_url"))
             Spacer(Modifier.width(8.dp))
             TextButton(onClick = { if (Instances.add(url)) { Toasts.show("Instance added. It will be tried first."); url = "" } else Toasts.show("Not a valid https origin, or already listed.") }, modifier = Modifier.testTag("instance_add")) { Text("Add", color = Aoide.accent) }
         }

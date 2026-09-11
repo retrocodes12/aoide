@@ -159,6 +159,8 @@ class Shots {
         launch(); val p = Library.createPlaylist("Late nights")
         navigate("local/${p.id}"); await { has("local_playlist_screen") }; settle(800); shot("16-local-playlist-empty")
         rule.onNodeWithTag("delete_playlist").performClick(); await { has("confirm_sheet") }; settle(600); shot("17-confirm-delete")
+        AppUi.confirm = null; settle(400)
+        rule.onNodeWithTag("rename_playlist").performClick(); await { has("rename_input") }; settle(600); shot("19-rename-sheet")
         Library.deletePlaylist(p.id)
     }
 

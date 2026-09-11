@@ -4,7 +4,6 @@ import android.net.Uri
 import android.util.Base64
 import app.aoide.data.ApiClient
 import app.aoide.data.Catalog
-import app.aoide.data.Instances
 import app.aoide.data.Quality
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -41,7 +40,10 @@ data class Resolved(val uri: Uri, val info: StreamInfo)
  *  2. TIDAL's own manifest endpoint (previews only without a subscription)
  */
 object StreamResolver {
-    private val cache = HashMap<String, Resolved>()
+    /** Signed segment URLs go stale, so a resolve is only trusted for ten minutes and the map is capped. */
+    private data class Cached(val at: Long, val value: Resolved)
+    private const val TTL_MS = 10 * 60_000L
+    private val cache = LinkedHashMap<String, Cached>()
     private val _infos = MutableStateFlow<Map<Long, StreamInfo>>(emptyMap())
     val infos: StateFlow<Map<Long, StreamInfo>> = _infos
 
@@ -49,7 +51,7 @@ object StreamResolver {
 
     suspend fun resolve(trackId: Long, quality: Quality): Resolved {
         val key = "$trackId:${quality.name}"
-        synchronized(cache) { cache[key]?.let { return it } }
+        synchronized(cache) { cache[key]?.let { if (System.currentTimeMillis() - it.at < TTL_MS) return it.value else cache.remove(key) } }
         val r = try {
             val m = Catalog.manifest(trackId, quality)
             if (m.manifest.isBlank()) throw IllegalStateException("No manifest from mirror")
@@ -60,11 +62,12 @@ object StreamResolver {
                 decoded.contains("<MPD") -> Uri.parse("data:application/dash+xml;base64," + Base64.encodeToString(decoded.toByteArray(), Base64.NO_WRAP))
                 else -> Uri.parse(directUrl(decoded) ?: throw IllegalStateException("Unreadable manifest"))
             }
-            Instances.noteSource("mirror")
             Resolved(uri, info)
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            throw e
         } catch (e: Exception) {
+            // One song falling back says nothing about the mirrors' health for browsing, so this does not touch the source note.
             val n = ApiClient.nativeManifest(trackId, quality)
-            Instances.noteSource("tidal")
             val fmt = n.formats.firstOrNull() ?: quality.name
             // Report the tier that was actually granted; TIDAL honours the format order but a track may lack a tier.
             val tier = when {
@@ -75,7 +78,10 @@ object StreamResolver {
             }
             Resolved(Uri.parse(n.uri), StreamInfo(trackId, n.trackPresentation.equals("PREVIEW", true), tier, null, null, "tidal"))
         }
-        synchronized(cache) { cache[key] = r }
+        synchronized(cache) {
+            if (cache.size >= 200) cache.remove(cache.keys.first())
+            cache[key] = Cached(System.currentTimeMillis(), r)
+        }
         _infos.value = _infos.value + (trackId to r.info)
         return r
     }

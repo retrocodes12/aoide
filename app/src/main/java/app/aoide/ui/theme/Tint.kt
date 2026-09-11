@@ -63,7 +63,8 @@ data class Tint(val accent: Color, val ink: Color, val soft: Color, val faint: C
                     ink = LIGHT_INK
                 }
             }
-            return Tint(tint, ink, ink.copy(alpha = alphaFor(ink, tint, 4.5, 0.6f)), ink.copy(alpha = alphaFor(ink, tint, 3.0, 0.38f)))
+            // Solve with a small margin so 8-bit quantisation of the composited colour cannot drop a pass below the bar.
+            return Tint(tint, ink, ink.copy(alpha = alphaFor(ink, tint, 4.6, 0.6f)), ink.copy(alpha = alphaFor(ink, tint, 3.08, 0.38f)))
         }
 
         /** WCAG contrast ratio between two opaque colours. */
@@ -78,7 +79,7 @@ data class Tint(val accent: Color, val ink: Color, val soft: Color, val faint: C
             var a = minAlpha
             while (a < 1f) {
                 val mixed = Color(a * ink.red + (1 - a) * bg.red, a * ink.green + (1 - a) * bg.green, a * ink.blue + (1 - a) * bg.blue)
-                if (contrast(mixed, bg) >= ratio) return (Math.round(a * 100f) / 100f)
+                if (contrast(mixed, bg) >= ratio) return (Math.ceil(a * 100.0) / 100.0).toFloat()
                 a += 0.02f
             }
             return 1f

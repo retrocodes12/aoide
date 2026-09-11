@@ -122,8 +122,8 @@ fun AppRoot() {
         }
 
         // Mini player + tab bar float over the content on a tall fade, so rows are not sliced mid-height where they pass under
-        Column(Modifier.align(Alignment.BottomCenter).fillMaxWidth().background(Brush.verticalGradient(listOf(Color.Transparent, Aoide.ground.copy(alpha = .92f), Aoide.base), endY = 360f))) {
-            Spacer(Modifier.height(28.dp))
+        Column(Modifier.align(Alignment.BottomCenter).fillMaxWidth().background(Brush.verticalGradient(0f to Color.Transparent, 0.22f to Aoide.ground.copy(alpha = .94f), 0.4f to Aoide.ground, 1f to Aoide.base))) {
+            Spacer(Modifier.height(72.dp))
             if (player.current != null) MiniPlayer(AppUi.player)
             NavigationBar(containerColor = Color.Transparent, tonalElevation = 0.dp, windowInsets = NavigationBarDefaults.windowInsets, modifier = Modifier.testTag("tab_bar")) {
                 TABS.forEach { t ->
@@ -157,7 +157,7 @@ fun AppRoot() {
 @OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
 @Composable
 private fun ConfirmSheet(c: Confirm, onDismiss: () -> Unit) {
-    ModalBottomSheet(onDismissRequest = onDismiss, containerColor = Aoide.elevated2, dragHandle = null, modifier = Modifier.testTag("confirm_sheet")) {
+    ModalBottomSheet(onDismissRequest = onDismiss, containerColor = Aoide.elevated2, scrimColor = app.aoide.ui.components.SheetScrim, dragHandle = null, modifier = Modifier.testTag("confirm_sheet")) {
         Column(Modifier.navigationBarsPadding().padding(start = 20.dp, end = 20.dp, top = 22.dp, bottom = 20.dp)) {
             Text(c.title, style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.ExtraBold))
             if (c.body != null) Text(c.body, style = MaterialTheme.typography.bodyMedium, color = Aoide.subdued, modifier = Modifier.padding(top = 6.dp))

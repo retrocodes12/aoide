@@ -266,12 +266,9 @@ fun LocalPlaylistScreen(id: String, onBack: () -> Unit) {
         item { Spacer(Modifier.height(160.dp)) }
     }
     if (rename) {
-        var name by remember { mutableStateOf(pl.title) }
-        val save = { Library.renamePlaylist(pl.id, name); rename = false; Toasts.show("Renamed") }
-        AlertDialog(onDismissRequest = { rename = false }, containerColor = Aoide.elevated2, title = { Text("Rename playlist") },
-            text = { OutlinedTextField(name, { name = it }, singleLine = true, keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done), keyboardActions = KeyboardActions(onDone = { save() }), modifier = Modifier.testTag("rename_input")) },
-            confirmButton = { TextButton(onClick = save) { Text("Save", color = Aoide.accent) } },
-            dismissButton = { TextButton(onClick = { rename = false }) { Text("Cancel", color = Aoide.subdued) } })
+        app.aoide.ui.components.NameSheet("Rename playlist", pl.title, "Save", "rename_input", "rename_save", onDismiss = { rename = false }) { name ->
+            Library.renamePlaylist(pl.id, name); rename = false; Toasts.show("Renamed")
+        }
     }
 }
 
