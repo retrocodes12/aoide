@@ -53,4 +53,4 @@ jobs:
           gh release delete "v${{ steps.v.outputs.name }}" -y --cleanup-tag 2>/dev/null || true
           gh release create "v${{ steps.v.outputs.name }}" "Aoide-${{ steps.v.outputs.name }}.apk" Aoide.apk \
             --title "Aoide ${{ steps.v.outputs.name }}" \
-            --notes "Android APK, signed with the Aoide release key so it installs over previous builds. Android 8.0 or newer."
+            --notes "$(git log -1 --pretty=%B)"$'\n\n'"Android APK, signed with the Aoide release key so it installs over previous builds and updates in place from Settings. Android 8.0 or newer."

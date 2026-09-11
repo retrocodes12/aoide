@@ -57,6 +57,7 @@ import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
 import app.aoide.data.Instances
 import app.aoide.data.Prefs
+import app.aoide.data.Updates
 import app.aoide.player.PlayerController
 import app.aoide.player.StreamResolver
 import app.aoide.ui.components.MiniPlayer
@@ -100,7 +101,12 @@ fun AppRoot() {
     val previewNoted by Prefs.previewNoted.collectAsState()
     val navigate: (String) -> Unit = { r -> nav.navigate(r) { launchSingleTop = true } }
 
-    LaunchedEffect(Unit) { Instances.probe() }
+    LaunchedEffect(Unit) {
+        Instances.probe()
+        // A moment after the mirrors are probed, so the first screen's requests go first.
+        delay(2500)
+        if (Updates.autoCheck) Updates.check()
+    }
     val pending = TestNav.request
     LaunchedEffect(pending) { if (pending != null) { TestNav.request = null; navigate(pending) } }
 

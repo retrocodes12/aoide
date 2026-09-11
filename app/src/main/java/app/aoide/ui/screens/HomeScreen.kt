@@ -1,5 +1,10 @@
 package app.aoide.ui.screens
 
+import androidx.compose.foundation.border
+import androidx.compose.material.icons.filled.Close
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
+import app.aoide.data.Updates
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.async
 import app.aoide.ui.plural
@@ -132,6 +137,24 @@ fun HomeScreen(onNavigate: (String) -> Unit) {
             Row(Modifier.statusBarsPadding().fillMaxWidth().padding(start = 16.dp, end = 4.dp, top = 12.dp), verticalAlignment = Alignment.CenterVertically) {
                 Text(greeting, style = MaterialTheme.typography.headlineMedium, modifier = Modifier.weight(1f))
                 IconButton(onClick = { onNavigate("settings") }, modifier = Modifier.semantics { contentDescription = "Settings" }.testTag("settings_button")) { Icon(Icons.Outlined.Settings, null, tint = Aoide.fg) }
+            }
+        }
+        item {
+            val up by Updates.state.collectAsState()
+            val rel = (up as? Updates.State.Available)?.release ?: (up as? Updates.State.Ready)?.release
+            if (rel != null && !Updates.isDismissed(rel.version)) {
+                var hidden by remember(rel.version) { mutableStateOf(false) }
+                if (!hidden) Row(
+                    Modifier.padding(horizontal = 16.dp).padding(top = 8.dp).fillMaxWidth().clip(RoundedCornerShape(10.dp)).background(Aoide.accent.copy(alpha = .14f)).border(1.dp, Aoide.accent.copy(alpha = .35f), RoundedCornerShape(10.dp))
+                        .clickable { onNavigate("settings") }.padding(start = 14.dp, end = 4.dp, top = 8.dp, bottom = 8.dp).testTag("update_banner"),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Column(Modifier.weight(1f)) {
+                        Text("Aoide ${rel.version} is out", style = MaterialTheme.typography.titleSmall)
+                        Text(if (up is Updates.State.Ready) "Downloaded. Tap to install." else "Tap to download and install.", style = MaterialTheme.typography.bodySmall, color = Aoide.subdued)
+                    }
+                    IconButton(onClick = { Updates.dismiss(rel.version); hidden = true }, modifier = Modifier.semantics { contentDescription = "Dismiss update" }) { Icon(Icons.Filled.Close, null, tint = Aoide.subdued) }
+                }
             }
         }
         item {

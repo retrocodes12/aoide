@@ -46,6 +46,14 @@ import app.aoide.data.Downloads
 import app.aoide.data.Library
 import app.aoide.data.Prefs
 import app.aoide.data.Translate
+import app.aoide.data.Updates
+import android.content.Intent
+import android.net.Uri
+import androidx.compose.foundation.layout.height
+import androidx.compose.material3.LinearProgressIndicator
+import androidx.compose.runtime.rememberCoroutineScope
+import kotlinx.coroutines.launch
+import androidx.compose.ui.text.style.TextOverflow
 import app.aoide.player.PlayerController
 import app.aoide.ui.Toasts
 import app.aoide.ui.components.Chip
@@ -160,5 +168,43 @@ internal fun BackupSettings() {
     Row(Modifier.padding(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
         OutlinePill("Save a backup") { export.launch("aoide-library.json") }
         OutlinePill("Restore") { import.launch(arrayOf("application/json", "*/*")) }
+    }
+}
+
+/** Version, the last check, and the download-then-install flow. Nothing installs until the listener taps Install. */
+@Composable
+internal fun UpdatesSection() {
+    val st by Updates.state.collectAsState()
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+    Section("Updates", "Aoide looks at its releases page once a day and updates in place. Every build is signed with the same key, so the installer accepts the new one over the old.")
+    Column(Modifier.padding(horizontal = 16.dp).testTag("updates_section")) {
+        Text("Version ${Updates.current}", style = MaterialTheme.typography.bodyLarge)
+        val status = when (val s = st) {
+            is Updates.State.Idle -> "Not checked yet."
+            is Updates.State.Checking -> "Checking…"
+            is Updates.State.UpToDate -> "You're on the latest version."
+            is Updates.State.Available -> "Aoide ${s.release.version} is out" + (if (s.release.apkBytes > 0) " · ${formatBytes(s.release.apkBytes)}" else "")
+            is Updates.State.Downloading -> "Downloading ${s.release.version}: ${(s.fraction * 100).toInt()}%"
+            is Updates.State.Ready -> "Aoide ${s.release.version} is downloaded. Tap Install to finish."
+            is Updates.State.Failed -> s.message
+        }
+        Text(status, style = MaterialTheme.typography.bodySmall, color = if (st is Updates.State.Available || st is Updates.State.Ready) Aoide.accent else Aoide.subdued, modifier = Modifier.padding(top = 2.dp).testTag("update_status"))
+        (st as? Updates.State.Downloading)?.let { d -> LinearProgressIndicator(progress = { d.fraction }, color = Aoide.accent, trackColor = Aoide.elevated2, modifier = Modifier.fillMaxWidth().padding(top = 8.dp).height(3.dp)) }
+        val notes = (st as? Updates.State.Available)?.release?.notes ?: (st as? Updates.State.Ready)?.release?.notes
+        if (!notes.isNullOrBlank()) Text(notes, style = MaterialTheme.typography.bodySmall, color = Aoide.subdued, maxLines = 12, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(top = 8.dp).testTag("update_notes"))
+        Row(Modifier.padding(top = 10.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            when (val s = st) {
+                is Updates.State.Available -> OutlinePill("Download") { scope.launch { Updates.download(context, s.release) } }
+                is Updates.State.Ready -> OutlinePill("Install") { if (!Updates.install(context, s.file)) Toasts.show("Allow Aoide to install apps, then tap Install again.") }
+                is Updates.State.Downloading -> Unit
+                is Updates.State.Failed -> {
+                    if (s.release != null) OutlinePill("Retry download") { scope.launch { Updates.download(context, s.release) } }
+                    OutlinePill("Check again") { scope.launch { Updates.check(force = true) } }
+                }
+                else -> OutlinePill("Check for updates", enabled = st !is Updates.State.Checking) { scope.launch { Updates.check(force = true) } }
+            }
+            OutlinePill("Release notes") { runCatching { context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse((st as? Updates.State.Available)?.release?.page ?: Updates.PAGE)).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) } }
+        }
     }
 }

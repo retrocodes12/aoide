@@ -100,6 +100,8 @@ class Shots {
                 .build()
         }
         app.aoide.ui.components.ArtworkConfig.crossfadeMs = 0
+        app.aoide.data.Updates.autoCheck = false
+        app.aoide.data.Updates.setStateForTest(app.aoide.data.Updates.State.Idle)
         AppUi.closeOverlays()
         PlayerController.setStateForTest(PlayerUiState())
         Toasts.clear()
@@ -206,6 +208,15 @@ class Shots {
         // Translation comes over the network from a rate-limited endpoint; render whatever arrived rather than fail the run.
         AppUi.lyricsOpen = true; await { has("lyrics_screen") }; runCatching { await(40_000) { has("lyric_translation") } }; settle(1500); shot("30-lyrics-translated")
         app.aoide.data.Prefs.translateLyrics.set(false)
+    }
+
+    @Test fun updates() {
+        launch()
+        val rel = app.aoide.data.Updates.Release("9.9.0", "Aoide 9.9.0", "Sample release notes: a new screen, two fixes.", app.aoide.data.Updates.PAGE, "https://example.invalid/Aoide-9.9.0.apk", 3_100_000L, "")
+        app.aoide.data.Updates.setStateForTest(app.aoide.data.Updates.State.Available(rel))
+        await { has("update_banner") }; settle(600); shot("31-update-banner")
+        navigate("settings"); await { has("updates_section") }; settle(600); shot("32-settings-updates")
+        app.aoide.data.Updates.setStateForTest(app.aoide.data.Updates.State.Idle)
     }
 
     @Test fun trackMenu() {

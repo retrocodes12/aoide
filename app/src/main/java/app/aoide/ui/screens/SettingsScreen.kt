@@ -123,6 +123,8 @@ fun SettingsScreen(onBack: () -> Unit, onNavigate: (String) -> Unit = {}) {
             Text("Settings", style = MaterialTheme.typography.headlineSmall)
         }
 
+        UpdatesSection()
+
         Section("Full songs", "Public mirrors only preview songs. With this on, Aoide finds the same recording on YouTube Music by artist, title and length, and streams it in full.")
         ToggleRow("Full songs from YouTube Music", if (yt) "On. Opus at up to about 160 kbps. A song with no match plays as a 30-second preview." else "Off. Songs play as 30-second previews unless a mirror serves them in full.", yt, "youtube_toggle") { Prefs.setYouTubeSource(it); PlayerController.reloadCurrent() }
 
