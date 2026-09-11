@@ -73,6 +73,12 @@ import app.aoide.ui.screens.PlaylistScreen
 import app.aoide.ui.screens.QueueScreen
 import app.aoide.ui.screens.SearchScreen
 import app.aoide.ui.screens.SettingsScreen
+import app.aoide.ui.screens.DownloadsScreen
+import app.aoide.ui.screens.LocalFilesScreen
+import app.aoide.ui.screens.HistoryScreen
+import app.aoide.ui.screens.EqualizerScreen
+import app.aoide.ui.screens.ImportScreen
+import app.aoide.ui.components.SleepSheet
 import app.aoide.ui.theme.Aoide
 import kotlinx.coroutines.delay
 
@@ -128,7 +134,12 @@ fun AppRoot() {
             composable("artist/{id}", arguments = listOf(navArgument("id") { type = NavType.LongType })) { ArtistScreen(it.arguments!!.getLong("id"), { nav.popBackStack() }, navigate) }
             composable("playlist/{uuid}") { PlaylistScreen(it.arguments!!.getString("uuid")!!, { nav.popBackStack() }, navigate) }
             composable("local/{id}") { LocalPlaylistScreen(it.arguments!!.getString("id")!!, { nav.popBackStack() }) }
-            composable("settings") { SettingsScreen { nav.popBackStack() } }
+            composable("settings") { SettingsScreen({ nav.popBackStack() }, navigate) }
+            composable("downloads") { DownloadsScreen { nav.popBackStack() } }
+            composable("local_files") { LocalFilesScreen { nav.popBackStack() } }
+            composable("history") { HistoryScreen { nav.popBackStack() } }
+            composable("equalizer") { EqualizerScreen { nav.popBackStack() } }
+            composable("import?link={link}", arguments = listOf(navArgument("link") { nullable = true; defaultValue = null })) { ImportScreen(it.arguments?.getString("link"), { nav.popBackStack() }, navigate) }
         }
 
         // Mini player + tab bar float over the content on a tall fade, so rows are not sliced mid-height where they pass under
@@ -158,6 +169,7 @@ fun AppRoot() {
 
         AppUi.menuTrack?.let { t -> TrackMenuSheet(t, AppUi.menuRemove, { r -> AppUi.closeOverlays(); navigate(r) }) { AppUi.menuTrack = null } }
         AppUi.confirm?.let { c -> ConfirmSheet(c) { AppUi.confirm = null } }
+        if (AppUi.sleepOpen) SleepSheet { AppUi.sleepOpen = false }
 
         ToastHost(Modifier.align(Alignment.BottomCenter).padding(bottom = if (AppUi.nowPlayingOpen) 200.dp else 132.dp).navigationBarsPadding())
     }

@@ -2,16 +2,12 @@ package app.aoide.player
 
 import android.content.ComponentName
 import android.content.Context
-import android.net.Uri
-import android.os.Bundle
 import androidx.core.content.ContextCompat
 import androidx.media3.common.MediaItem
-import androidx.media3.common.MediaMetadata
 import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
 import androidx.media3.session.MediaController
 import androidx.media3.session.SessionToken
-import app.aoide.data.Catalog
 import app.aoide.data.Library
 import app.aoide.data.PlayContext
 import app.aoide.data.Prefs
@@ -74,8 +70,12 @@ object PlayerController {
     private var lastTintId = -1L
     private var tick = 0
 
+    private var appContext: Context? = null
+    private var lastWidget: String? = null
+
     fun connect(appContext: Context) {
         if (controller != null) return
+        this.appContext = appContext.applicationContext
         sessionFile = File(appContext.filesDir, "session.json")
         val token = SessionToken(appContext, ComponentName(appContext, PlaybackService::class.java))
         val future = MediaController.Builder(appContext, token).buildAsync()
@@ -158,6 +158,11 @@ object PlayerController {
             lastTintId = cur.id
             AppUi.player = Tint.of(cur.album?.vibrantColor)
         }
+        val widgetKey = "${cur?.id}:${status == Status.PLAYING || status == Status.LOADING}"
+        if (widgetKey != lastWidget) {
+            lastWidget = widgetKey
+            appContext?.let { app.aoide.widget.AoideWidget.push(it, cur, status == Status.PLAYING || status == Status.LOADING) }
+        }
         if (status == Status.PLAYING || status == Status.LOADING) startTicker() else ticker?.cancel()
     }
 
@@ -178,18 +183,10 @@ object PlayerController {
 
     private fun trackOf(item: MediaItem?): Track? = item?.mediaMetadata?.extras?.getString("track")?.let { runCatching { json.decodeFromString<Track>(it) }.getOrNull() }
 
-    private fun mediaItem(t: Track): MediaItem {
-        TrackRegistry.put(t)
-        val extras = Bundle().apply { putString("track", json.encodeToString(t)) }
-        val meta = MediaMetadata.Builder()
-            .setTitle(t.title + (t.version?.let { " - $it" } ?: ""))
-            .setArtist(t.artistNames)
-            .setAlbumTitle(t.album?.title)
-            .setArtworkUri(Catalog.cover(t.album?.cover, 640)?.let(Uri::parse))
-            .setExtras(extras)
-            .build()
-        return MediaItem.Builder().setMediaId(t.id.toString()).setMediaMetadata(meta).build()
-    }
+    private fun mediaItem(t: Track): MediaItem = AoideMedia.mediaItemFor(t)
+
+    /** Songs the service appended by itself when the queue ran out; the queue screen labels them. */
+    fun isAutoplayed(i: Int): Boolean = controller?.let { c -> i in 0 until c.mediaItemCount && c.getMediaItemAt(i).mediaMetadata.extras?.getBoolean("autoplay") == true } ?: false
 
     /* ---------- session ---------- */
 

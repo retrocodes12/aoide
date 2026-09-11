@@ -72,7 +72,7 @@ import kotlinx.serialization.json.jsonPrimitive
 import okhttp3.Request
 
 @Composable
-fun SettingsScreen(onBack: () -> Unit) {
+fun SettingsScreen(onBack: () -> Unit, onNavigate: (String) -> Unit = {}) {
     val quality by Prefs.quality.collectAsState()
     val instances by Instances.list.collectAsState()
     val health by Instances.health.collectAsState()
@@ -152,6 +152,12 @@ fun SettingsScreen(onBack: () -> Unit) {
             }
         }
 
+        PlaybackSettings()
+        FeatureRows(onNavigate)
+        LookSettings()
+        LyricsSettings()
+        BackupSettings()
+
         if (Build.VERSION.SDK_INT >= 33 && ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
             Section("Notifications", "Notifications are off, so there is no media notification and no lock-screen control. Turn them on in the system settings.")
             Row(Modifier.padding(horizontal = 16.dp)) {
@@ -194,13 +200,13 @@ fun SettingsScreen(onBack: () -> Unit) {
             OutlinePill("Clear cache") { ApiClient.clearCache(); Toasts.show("Cache cleared") }
         }
 
-        Section("About", "Aoide, the muse of song. A phone player in the shape of Spotify with Apple Music's polish. Liked songs, playlists and history stay on this phone; nothing leaves it.\n\nSources: Monochrome hifi-api mirrors and TIDAL's public catalogue for browsing, YouTube Music for full-length audio, lrclib.net for lyrics. Not affiliated with Spotify, Apple, TIDAL, YouTube or Monochrome.")
+        Section("About", "Aoide ${app.aoide.BuildConfig.VERSION_NAME}, the muse of song. A phone player in the shape of Spotify with Apple Music's polish. Liked songs, playlists, downloads and history stay on this phone; nothing leaves it.\n\nAlso on the car screen through Android Auto, and on the home screen as a widget (long-press the launcher, Widgets, Aoide).\n\nSources: Monochrome hifi-api mirrors and TIDAL's public catalogue for browsing, YouTube Music for full-length audio and downloads, lrclib.net for lyrics, Google Translate for translated lyrics. Not affiliated with Spotify, Apple, TIDAL, YouTube, Google or Monochrome.")
         Spacer(Modifier.height(160.dp))
     }
 }
 
 @Composable
-private fun Section(title: String, hint: String) {
+internal fun Section(title: String, hint: String) {
     Column(Modifier.padding(horizontal = 16.dp).padding(top = 28.dp, bottom = 8.dp)) {
         Text(title, style = MaterialTheme.typography.titleLarge)
         Text(hint, style = MaterialTheme.typography.bodySmall, color = Aoide.subdued, modifier = Modifier.padding(top = 4.dp))
@@ -209,7 +215,7 @@ private fun Section(title: String, hint: String) {
 
 /** Spotify's switch: a pill that fills orange, a dark knob that slides across. */
 @Composable
-private fun ToggleRow(title: String, body: String, on: Boolean, tag: String, onChange: (Boolean) -> Unit) {
+internal fun ToggleRow(title: String, body: String, on: Boolean, tag: String, onChange: (Boolean) -> Unit) {
     Row(
         Modifier.fillMaxWidth().clickable { onChange(!on) }.padding(horizontal = 16.dp, vertical = 10.dp)
             .semantics { contentDescription = title; stateDescription = if (on) "On" else "Off" }.testTag(tag),

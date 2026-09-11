@@ -21,6 +21,13 @@ import androidx.compose.material.icons.filled.QueueMusic
 import androidx.compose.material.icons.filled.RemoveCircleOutline
 import androidx.compose.material.icons.filled.SkipNext
 import androidx.compose.material.icons.outlined.AddCircleOutline
+import androidx.compose.material.icons.outlined.ArrowCircleDown
+import androidx.compose.material.icons.filled.DownloadDone
+import androidx.compose.material.icons.filled.Share
+import androidx.compose.material.icons.filled.RingVolume
+import androidx.compose.material.icons.filled.Bedtime
+import androidx.compose.ui.platform.LocalContext
+import app.aoide.data.Downloads
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -53,6 +60,9 @@ import app.aoide.ui.theme.Aoide
 fun TrackMenuSheet(track: Track, onRemove: (() -> Unit)?, onNavigate: (String) -> Unit, onDismiss: () -> Unit) {
     val lib by Library.state.collectAsState()
     val liked = lib.isLiked(track.id)
+    val downloads by Downloads.all.collectAsState()
+    val kept = downloads[track.id]
+    val context = LocalContext.current
     var pickPlaylist by remember { mutableStateOf(false) }
     var newName by remember { mutableStateOf("") }
     ModalBottomSheet(onDismissRequest = onDismiss, containerColor = Aoide.elevated2, scrimColor = SheetScrim, dragHandle = null, modifier = Modifier.testTag("track_menu")) {
@@ -73,6 +83,14 @@ fun TrackMenuSheet(track: Track, onRemove: (() -> Unit)?, onNavigate: (String) -
                 MenuItem(Icons.Filled.PlaylistAdd, "Add to playlist") { pickPlaylist = true }
                 MenuItem(Icons.Filled.QueueMusic, "Add to queue") { PlayerController.enqueueLast(track); Toasts.show("Added to queue"); onDismiss() }
                 MenuItem(Icons.Filled.SkipNext, "Play next") { PlayerController.enqueueNext(track); Toasts.show("Playing next"); onDismiss() }
+                if (track.id > 0) {
+                    if (kept != null) MenuItem(Icons.Filled.DownloadDone, "Remove download", subtitle = kept.label, tint = Aoide.accent) { Downloads.remove(track.id); Toasts.show("Download removed"); onDismiss() }
+                    else if (Downloads.isQueued(track.id)) MenuItem(Icons.Outlined.ArrowCircleDown, "Downloading…", subtitle = "In the queue") { Downloads.cancel(track.id); Toasts.show("Download cancelled"); onDismiss() }
+                    else MenuItem(Icons.Outlined.ArrowCircleDown, "Download", subtitle = "Keep the full song on this phone") { Downloads.enqueue(listOf(track)); Toasts.show("Downloading ${track.title}"); onDismiss() }
+                }
+                MenuItem(Icons.Filled.Share, "Share") { app.aoide.ui.components.TrackActions.share(context, track); onDismiss() }
+                if (kept != null) MenuItem(Icons.Filled.RingVolume, "Set as ringtone") { Toasts.show(app.aoide.ui.components.TrackActions.setRingtone(context, kept)); onDismiss() }
+                MenuItem(Icons.Filled.Bedtime, "Sleep timer", subtitle = app.aoide.player.SleepTimer.label()) { onDismiss(); AppUi.sleepOpen = true }
                 track.album?.let { a -> MenuItem(Icons.Filled.Album, "Go to album") { onNavigate("album/${a.id}"); onDismiss() } }
                 track.primaryArtist?.let { a -> MenuItem(Icons.Filled.Person, "Go to artist") { onNavigate("artist/${a.id}"); onDismiss() } }
                 if (onRemove != null) MenuItem(Icons.Filled.RemoveCircleOutline, "Remove from this playlist") { onRemove(); onDismiss() }

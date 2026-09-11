@@ -16,7 +16,7 @@ import java.net.URLEncoder
 object Catalog {
     private fun enc(s: String) = URLEncoder.encode(s, "UTF-8")
 
-    fun cover(uuid: String?, size: Int = 320): String? = uuid?.let { "https://resources.tidal.com/images/${it.replace('-', '/')}/${size}x${size}.jpg" }
+    fun cover(uuid: String?, size: Int = 320): String? = uuid?.let { if (it.contains("://")) it else "https://resources.tidal.com/images/${it.replace('-', '/')}/${size}x${size}.jpg" }
     fun artistPicture(uuid: String?, size: Int = 320): String? = cover(uuid, size)
     fun playlistImage(p: Playlist, size: Int = 320): String? = cover(p.squareImage ?: p.image, size)
 

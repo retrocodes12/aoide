@@ -23,6 +23,24 @@
 - Instance manager: reads the same hifi-api mirrors Monochrome lists, fails over between them, benches a broken one for 90 seconds, and lets you add your own. When every mirror is down it browses TIDAL's catalogue directly and says so on Home and in Settings.
 - Quality picker: Hi-Res Lossless, Lossless, High, Low, with an honest read-back when a song was only granted a lower tier.
 
+### Added in 0.5.0
+
+- **Downloads.** Any song, album or playlist can be kept on the phone. Files come from YouTube Music (the only source that hands out whole files), are fetched one at a time by a foreground service with a progress notification, and play with no connection at all through the same DASH path as everything else. A Downloads collection in Your Library lists what is kept, what is coming and what failed, with the total size and a remove-all.
+- **Your own music files.** "On this phone" reads MediaStore and plays what is already there, with the same rows, queue and player.
+- **Import playlists from Spotify and YouTube Music** by pasting a link. Nothing to log into: a public Spotify playlist's embed page and a YouTube Music playlist's browse call both carry the track list. Each song is matched in the catalogue by artist, title and length; misses are listed, never guessed. An imported playlist remembers its source and has a sync button that appends what is new.
+- **History and stats.** Recently played and most played, with minutes listened, songs and top artist, all kept on the phone. Clearable.
+- **Equalizer.** Five bands (or whatever the phone's audio chip offers), presets, and bass boost, on Android's own audio effects bound to Aoide's audio session.
+- **Sleep timer**, in minutes or at the end of the current song, from the player and from any song's menu.
+- **Playback settings.** Data saver (the smallest stream on mobile data), fade between songs (the end of one fades out and the next fades in; play and pause fade too; it is a fade, not a true overlap), playback speed with the pitch kept, skip silence, pause when muted, resume when headphones or Bluetooth come back, and autoplay of similar songs when the queue runs out.
+- **Share** a song as text with a song.link page, so it opens in whatever the other person uses. **Set as ringtone** for a downloaded song, on Android 10 and newer.
+- **Lyrics translated** under each line, through Google Translate's web endpoint, in twenty languages; three lyric sizes.
+- **Accent colour** (orange stays the default) and **pure black** for OLED screens.
+- **Backup and restore** the library as one JSON file through the system file picker.
+- **Android Auto**: the playback service is a Media3 library service, so the car screen can browse Liked Songs, Recently played, Downloads and playlists and search the catalogue by voice.
+- **Home-screen widget** with the song playing and play, pause and skip.
+
+Not built, on purpose: Listen Together, Chromecast and DLNA, music recognition, podcasts, canvas videos, video mode, a Dynamic Island, and word-by-word lyrics. Each is either a service Aoide does not have, or a screen it would be dishonest to fake.
+
 ## How streaming works, honestly
 
 Aoide browses TIDAL's catalogue through the Monochrome mirrors and plays each song from the best source that answers, in this order:

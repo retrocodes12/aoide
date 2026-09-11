@@ -8,6 +8,7 @@ import androidx.compose.ui.test.onRoot
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollToIndex
 import androidx.compose.ui.test.performScrollToNode
+import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.hasTestTag
 import androidx.compose.ui.test.performImeAction
 import androidx.compose.ui.test.performTextInput
@@ -170,6 +171,41 @@ class Shots {
         AppUi.confirm = null; settle(400)
         rule.onNodeWithTag("rename_playlist").performClick(); await { has("rename_input") }; settle(600); shot("19-rename-sheet")
         Library.deletePlaylist(p.id)
+    }
+
+    @Test fun downloadsAndHistory() {
+        launch(); val (_, tracks) = album()
+        navigate("downloads"); await { has("downloads_screen") }; settle(800); shot("21-downloads-empty")
+        tracks.take(3).forEach { Library.recordPlay(it) }; Library.recordPlay(tracks[0])
+        navigate("history"); await { has("history_screen") }; settle(1500); shot("22-history")
+        Library.clearHistory()
+    }
+
+    @Test fun equalizerAndImport() {
+        launch(); navigate("equalizer"); await { has("equalizer_screen") }; settle(800); shot("23-equalizer")
+        navigate("import"); await { has("import_screen") }; settle(600)
+        rule.onNodeWithTag("import_link").performTextInput("https://open.spotify.com/playlist/37i9dQZF1DXcBWIGoYBM5M")
+        settle(400); shot("24-import")
+        rule.onNodeWithTag("import_go").performClick()
+        await(90_000) { has("import_title") }; settle(3000); shot("25-import-matched")
+    }
+
+    @Test fun settingsMore() {
+        launch(); navigate("settings"); await { has("data_saver_toggle") }
+        rule.onNodeWithTag("data_saver_toggle").performScrollTo(); settle(600); shot("26-settings-playback")
+        rule.onNodeWithTag("translate_toggle").performScrollTo(); settle(600); shot("27-settings-look")
+        navigate("local_files"); await { has("local_files_screen") }; settle(800); shot("28-local-files")
+    }
+
+    @Test fun sleepAndLyricsTranslation() {
+        launch(); val (a, tracks) = album(); playing(tracks, a.title)
+        AppUi.nowPlayingOpen = true; await { has("now_playing") }; settle(2000)
+        AppUi.sleepOpen = true; await { has("sleep_sheet") }; settle(600); shot("29-sleep-timer")
+        AppUi.sleepOpen = false; settle(300)
+        app.aoide.data.Prefs.translateLyrics.set(true); app.aoide.data.Prefs.setLyricsLang("hi")
+        // Translation comes over the network from a rate-limited endpoint; render whatever arrived rather than fail the run.
+        AppUi.lyricsOpen = true; await { has("lyrics_screen") }; runCatching { await(40_000) { has("lyric_translation") } }; settle(1500); shot("30-lyrics-translated")
+        app.aoide.data.Prefs.translateLyrics.set(false)
     }
 
     @Test fun trackMenu() {

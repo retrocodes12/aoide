@@ -4,6 +4,8 @@ import android.net.Uri
 import android.util.Base64
 import app.aoide.data.ApiClient
 import app.aoide.data.Catalog
+import app.aoide.data.Download
+import app.aoide.data.Downloads
 import app.aoide.data.Instances
 import app.aoide.data.Prefs
 import app.aoide.data.Quality
@@ -31,7 +33,7 @@ data class StreamInfo(
     val label: String
         get() = when {
             isPreview -> "PREVIEW"
-            source == "youtube" -> quality
+            source == "youtube" || source == "download" -> quality
             bitDepth != null && sampleRate != null -> "FLAC $bitDepth/${sampleRate / 1000}"
             quality.contains("LOSSLESS") -> "FLAC"
             quality.isNotBlank() -> quality
@@ -66,6 +68,8 @@ object StreamResolver {
     fun infoFor(trackId: Long): StreamInfo? = _infos.value[trackId]
 
     suspend fun resolve(trackId: Long, quality: Quality): Resolved {
+        // A song kept on the phone never touches the network, whatever was cached before it was saved.
+        Downloads.get(trackId)?.let { d -> return fromDownload(d).also { _infos.value = _infos.value + (trackId to it.info) } }
         // The YouTube switch is part of the key, so flipping it never replays a stream from the other source.
         val key = "$trackId:${quality.name}:${Prefs.youtubeSource.value}"
         synchronized(cache) { cache[key]?.let { if (System.currentTimeMillis() - it.at < TTL_MS) return it.value else cache.remove(key) } }
@@ -96,6 +100,11 @@ object StreamResolver {
         throw e
     } catch (e: Exception) {
         null
+    }
+
+    private fun fromDownload(d: Download): Resolved {
+        val info = StreamInfo(d.track.id, isPreview = false, quality = "Downloaded · ${d.label}", bitDepth = null, sampleRate = d.sampleRate, source = "download")
+        return Resolved(Uri.parse("data:application/dash+xml;base64," + Base64.encodeToString(Downloads.manifest(d).toByteArray(), Base64.NO_WRAP)), info)
     }
 
     private suspend fun fromYouTube(trackId: Long, quality: Quality): Resolved? {

@@ -1,3 +1,5 @@
 <resources>
     <string name="app_name">Aoide</string>
+    <string name="widget_name">Now playing</string>
+    <string name="widget_description">The song playing in Aoide, with play, pause and skip.</string>
 </resources>

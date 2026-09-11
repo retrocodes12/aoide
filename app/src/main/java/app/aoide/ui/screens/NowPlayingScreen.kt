@@ -40,6 +40,11 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Bedtime
+import androidx.compose.material.icons.filled.Translate
+import app.aoide.data.Prefs
+import app.aoide.data.Translate
+import app.aoide.player.SleepTimer
 import androidx.compose.material.icons.filled.DragHandle
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.Lyrics
@@ -220,6 +225,9 @@ fun NowPlayingScreen(tint: Tint, onNavigate: (String) -> Unit) {
             Row(Modifier.fillMaxWidth().padding(horizontal = 22.dp, vertical = 4.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween) {
                 IconButton(onClick = { AppUi.lyricsOpen = true }, modifier = Modifier.semantics { contentDescription = "Lyrics" }.testTag("np_lyrics")) { Icon(Icons.Filled.Lyrics, null, tint = Aoide.fg.copy(alpha = .8f)) }
                 Spacer(Modifier.weight(1f))
+                val sleepAt by SleepTimer.endAt.collectAsState()
+                val sleepEnd by SleepTimer.endOfTrack.collectAsState()
+                IconButton(onClick = { AppUi.sleepOpen = true }, modifier = Modifier.semantics { contentDescription = "Sleep timer" }.testTag("np_sleep")) { Icon(Icons.Filled.Bedtime, null, tint = if (sleepAt != null || sleepEnd) Aoide.accent else Aoide.fg.copy(alpha = .8f)) }
                 IconButton(onClick = { AppUi.queueOpen = true }, modifier = Modifier.semantics { contentDescription = "Queue" }.testTag("np_queue")) { Icon(Icons.Filled.QueueMusic, null, tint = Aoide.fg.copy(alpha = .8f)) }
             }
             // Lyrics card, as Spotify shows under the controls
@@ -265,6 +273,8 @@ fun LyricsScreen(tint: Tint) {
                 Text(t.title, style = MaterialTheme.typography.titleSmall, color = tint.ink, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 Text(t.artistNames, style = MaterialTheme.typography.bodySmall, color = tint.soft, maxLines = 1, overflow = TextOverflow.Ellipsis)
             }
+            val translating by Prefs.translateLyrics.value.collectAsState()
+            IconButton(onClick = { Prefs.translateLyrics.set(!translating) }, modifier = Modifier.semantics { contentDescription = if (translating) "Hide translation" else "Translate lyrics" }.testTag("lyrics_translate")) { Icon(Icons.Filled.Translate, null, tint = if (translating) tint.ink else tint.soft) }
             IconButton(onClick = { AppUi.lyricsOpen = false }, modifier = Modifier.semantics { contentDescription = "Close lyrics" }.testTag("lyrics_close")) { Icon(Icons.Filled.Close, null, tint = tint.ink) }
         }
         when (val l = lyrics) {
@@ -273,7 +283,8 @@ fun LyricsScreen(tint: Tint) {
             is Resource.Ready -> LyricsBody(l.value, s.positionMs, s.durationMs, isPreview, tint, listState, Modifier.weight(1f))
         }
         Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
-            Text("Lyrics provided by lrclib", style = MaterialTheme.typography.bodySmall, color = tint.soft, modifier = Modifier.weight(1f))
+            val translatingFoot by Prefs.translateLyrics.value.collectAsState()
+            Text(if (translatingFoot) "Lyrics by lrclib · translation by Google Translate" else "Lyrics provided by lrclib", style = MaterialTheme.typography.bodySmall, color = tint.soft, modifier = Modifier.weight(1f))
             Box(Modifier.size(52.dp).clip(CircleShape).background(tint.ink).clickable { PlayerController.toggle() }.semantics { contentDescription = if (s.isPlaying) "Pause" else "Play" }, contentAlignment = Alignment.Center) {
                 Icon(if (s.isPlaying) Icons.Filled.Pause else Icons.Filled.PlayArrow, null, tint = tint.accent, modifier = Modifier.size(28.dp))
             }
@@ -291,6 +302,12 @@ private fun LyricsBody(l: Lyrics?, positionMs: Long, durationMs: Long, isPreview
     }
     val pos = positionMs / 1000.0 + 0.25
     val active = synced?.indexOfLast { it.t <= pos } ?: -1
+    val translating by Prefs.translateLyrics.value.collectAsState()
+    val lang by Prefs.lyricsLang.collectAsState()
+    val size by Prefs.lyricsSize.collectAsState()
+    val sourceLines = synced?.map { it.line } ?: plain!!.lines()
+    val translated by rememberResource("translate", translating, lang, sourceLines) { if (translating) Translate.lines(sourceLines, lang) else emptyList() }
+    val tr: List<String> = (translated as? Resource.Ready)?.value?.takeIf { it.size == sourceLines.size } ?: emptyList()
     // On a 30-second preview the lyrics still cover the whole song; lines past the clip cannot be reached.
     val reachable: (Double) -> Boolean = { t -> !isPreview || durationMs <= 0 || t < durationMs / 1000.0 - 0.5 }
     LaunchedEffect(active) { if (active >= 0) listState.animateScrollToItem((active - 2).coerceAtLeast(0)) }
@@ -305,12 +322,15 @@ private fun LyricsBody(l: Lyrics?, positionMs: Long, durationMs: Long, isPreview
                     else -> tint.soft
                 }
                 val scale by animateFloatAsState(if (i == active) 1.04f else 1f, label = "line")
-                Text(
-                    line.line.ifBlank { "♪" },
-                    style = MaterialTheme.typography.headlineMedium.copy(fontWeight = if (ok) FontWeight.ExtraBold else FontWeight.SemiBold, fontSize = 26.sp, lineHeight = 34.sp),
-                    color = color,
-                    modifier = Modifier.fillMaxWidth().scale(scale).clickable(enabled = ok) { PlayerController.seekTo((line.t * 1000).toLong()) }.padding(vertical = 6.dp).semantics { contentDescription = if (ok) "Lyric line" else "Lyric line, past the preview" }.testTag("lyric_line"),
-                )
+                Column(Modifier.fillMaxWidth().scale(scale).clickable(enabled = ok) { PlayerController.seekTo((line.t * 1000).toLong()) }.padding(vertical = 6.dp).semantics { contentDescription = if (ok) "Lyric line" else "Lyric line, past the preview" }.testTag("lyric_line")) {
+                    Text(
+                        line.line.ifBlank { "♪" },
+                        style = MaterialTheme.typography.headlineMedium.copy(fontWeight = if (ok) FontWeight.ExtraBold else FontWeight.SemiBold, fontSize = size.sp, lineHeight = (size + 8).sp),
+                        color = color,
+                    )
+                    val t = tr.getOrNull(i)
+                    if (t != null && t.isNotBlank() && t != line.line) Text(t, style = MaterialTheme.typography.bodyLarge.copy(fontSize = (size * 0.6f).sp, lineHeight = (size * 0.8f).sp), color = if (i == active) tint.soft else tint.faint, modifier = Modifier.padding(top = 2.dp).testTag("lyric_translation"))
+                }
             }
             if (isPreview && synced.any { !reachable(it.t) }) {
                 itemsIndexed(listOf("Only the first 30 seconds play on this mirror; the rest of the lyrics are shown for reading.")) { _, note ->
@@ -318,7 +338,11 @@ private fun LyricsBody(l: Lyrics?, positionMs: Long, durationMs: Long, isPreview
                 }
             }
         } else {
-            itemsIndexed(plain!!.lines()) { _, line -> Text(line, style = MaterialTheme.typography.titleLarge.copy(fontSize = 20.sp, lineHeight = 30.sp), color = tint.ink) }
+            itemsIndexed(plain!!.lines()) { i, line ->
+                Text(line, style = MaterialTheme.typography.titleLarge.copy(fontSize = (size * 0.8f).sp, lineHeight = (size * 1.15f).sp), color = tint.ink)
+                val t = tr.getOrNull(i)
+                if (t != null && t.isNotBlank() && t != line) Text(t, style = MaterialTheme.typography.bodyMedium.copy(fontSize = (size * 0.55f).sp), color = tint.soft, modifier = Modifier.padding(bottom = 4.dp))
+            }
         }
     }
 }

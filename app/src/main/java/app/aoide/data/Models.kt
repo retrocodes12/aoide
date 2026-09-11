@@ -136,7 +136,7 @@ enum class Quality(val label: String, val note: String) {
 
 /** A playlist the user made on this phone. */
 @Serializable
-data class LocalPlaylist(val id: String, val title: String, val tracks: List<Track> = emptyList(), val createdAt: Long = 0)
+data class LocalPlaylist(val id: String, val title: String, val tracks: List<Track> = emptyList(), val createdAt: Long = 0, val source: String? = null)
 
 data class LyricLine(val t: Double, val line: String)
 data class Lyrics(val plain: String?, val synced: List<LyricLine>?)

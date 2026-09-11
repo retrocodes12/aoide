@@ -22,6 +22,7 @@ object AppUi {
     var nowPlayingOpen by mutableStateOf(false)
     var lyricsOpen by mutableStateOf(false)
     var queueOpen by mutableStateOf(false)
+    var sleepOpen by mutableStateOf(false)
     var menuTrack by mutableStateOf<Track?>(null)
     var menuRemove by mutableStateOf<(() -> Unit)?>(null)
     var confirm by mutableStateOf<Confirm?>(null)
@@ -41,6 +42,7 @@ object AppUi {
         nowPlayingOpen = false
         lyricsOpen = false
         queueOpen = false
+        sleepOpen = false
         confirm = null
     }
 }

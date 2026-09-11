@@ -32,6 +32,13 @@ import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Shuffle
 import androidx.compose.material.icons.outlined.AddCircleOutline
+import androidx.compose.material.icons.outlined.ArrowCircleDown
+import androidx.compose.material.icons.filled.DownloadDone
+import androidx.compose.material.icons.filled.Sync
+import app.aoide.data.Downloads
+import app.aoide.data.Importer
+import androidx.compose.runtime.rememberCoroutineScope
+import kotlinx.coroutines.launch
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -153,6 +160,8 @@ fun AlbumScreen(id: Long, onBack: () -> Unit, onNavigate: (String) -> Unit) {
                         IconDisc(if (saved) Icons.Filled.CheckCircle else Icons.Outlined.AddCircleOutline, if (saved) "Remove from Your Library" else "Save to Your Library", Modifier.testTag("save_album"), tint = if (saved) Aoide.accent else Color.White) {
                             Toasts.show(if (Library.toggleAlbum(album)) "Added to Your Library" else "Removed from Your Library")
                         }
+                        Spacer(Modifier.width(8.dp))
+                        DownloadDisc(tracks)
                     }
                 },
                 shuffle = { if (!player.shuffle) PlayerController.toggleShuffle(); PlayerController.playTracks(tracks, (tracks.indices).random(), ctx) },
@@ -225,6 +234,8 @@ fun PlaylistScreen(uuid: String, onBack: () -> Unit, onNavigate: (String) -> Uni
                         IconDisc(if (saved) Icons.Filled.CheckCircle else Icons.Outlined.AddCircleOutline, if (saved) "Remove from Your Library" else "Add to Your Library", Modifier.testTag("save_playlist"), tint = if (saved) Aoide.accent else Color.White) {
                             Toasts.show(if (Library.togglePlaylist(p)) "Added to Your Library" else "Removed from Your Library")
                         }
+                        Spacer(Modifier.width(8.dp))
+                        DownloadDisc(tracks)
                     }
                 },
                 shuffle = { if (!player.shuffle) PlayerController.toggleShuffle(); PlayerController.playTracks(tracks, tracks.indices.random(), ctx) },
@@ -252,6 +263,8 @@ fun LocalPlaylistScreen(id: String, onBack: () -> Unit) {
     val ctx = PlayContext("playlist", pl.title, "local/${pl.id}")
     val thisPlaying = player.context?.href == ctx.href && player.isPlaying
     val list = rememberLazyListState()
+    val scope = rememberCoroutineScope()
+    var syncing by remember { mutableStateOf(false) }
     Box {
     LazyColumn(Modifier.testTag("local_playlist_screen"), state = list) {
         item {
@@ -265,6 +278,25 @@ fun LocalPlaylistScreen(id: String, onBack: () -> Unit) {
                     IconDisc(Icons.Filled.Delete, "Delete playlist", Modifier.testTag("delete_playlist")) {
                         AppUi.ask("Delete “${pl.title}”?", "Delete", "This removes the playlist from this device. Songs stay in the catalogue.") {
                             Library.deletePlaylist(pl.id); Toasts.show("Playlist deleted"); onBack()
+                        }
+                    }
+                    Spacer(Modifier.width(8.dp))
+                    DownloadDisc(pl.tracks)
+                    pl.source?.let { src ->
+                        Spacer(Modifier.width(8.dp))
+                        // Imported lists remember where they came from: sync fetches the source again and appends what is new.
+                        IconDisc(Icons.Filled.Sync, if (syncing) "Syncing" else "Sync from ${if (src.startsWith("spotify")) "Spotify" else "YouTube Music"}", Modifier.testTag("sync_playlist"), tint = if (syncing) Aoide.accent else Color.White) {
+                            if (syncing) return@IconDisc
+                            syncing = true
+                            scope.launch {
+                                val r = runCatching { Importer.match(Importer.read(src.substringBefore(":"), src.substringAfter(":"))) }.getOrNull()
+                                syncing = false
+                                if (r == null) { Toasts.show("Couldn't reach the source playlist"); return@launch }
+                                val before = pl.tracks.size
+                                Library.syncPlaylist(pl.id, r.matched)
+                                val added = (Library.playlist(pl.id)?.tracks?.size ?: before) - before
+                                Toasts.show(if (added > 0) "Synced: ${plural(added, "new song")}" else "Already up to date")
+                            }
                         }
                     }
                 },
@@ -420,3 +452,17 @@ fun ArtistScreen(id: Long, onBack: () -> Unit, onNavigate: (String) -> Unit) {
 
 @Suppress("unused")
 private fun keepAlbum(a: Album, t: Track) = a to t
+
+/** One disc that downloads a whole list, and turns orange once every song is kept. */
+@Composable
+internal fun DownloadDisc(tracks: List<Track>) {
+    val downloads by Downloads.all.collectAsState()
+    val ids = tracks.filter { it.id > 0 }.map { it.id }
+    val all = ids.isNotEmpty() && ids.all { downloads.containsKey(it) }
+    val some = ids.any { downloads.containsKey(it) || Downloads.isQueued(it) }
+    IconDisc(if (all) Icons.Filled.DownloadDone else Icons.Outlined.ArrowCircleDown, if (all) "Remove downloads" else "Download all", Modifier.testTag("download_all"), tint = if (all || some) Aoide.accent else Color.White) {
+        if (ids.isEmpty()) return@IconDisc
+        if (all) AppUi.ask("Remove these downloads?", "Remove", "The songs stay in your library and play online.") { ids.forEach(Downloads::remove); Toasts.show("Downloads removed") }
+        else { Downloads.enqueue(tracks); Toasts.show("Downloading ${plural(ids.size, "song")}") }
+    }
+}

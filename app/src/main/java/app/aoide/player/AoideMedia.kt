@@ -1,8 +1,11 @@
 package app.aoide.player
 
 import android.content.Context
+import android.net.ConnectivityManager
 import android.net.Uri
+import android.os.Bundle
 import androidx.media3.common.MediaItem
+import androidx.media3.common.MediaMetadata
 import androidx.media3.common.MimeTypes
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.datasource.DataSpec
@@ -12,11 +15,15 @@ import androidx.media3.datasource.ResolvingDataSource
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
 import androidx.media3.exoplayer.source.MediaSource
 import app.aoide.data.ApiClient
+import app.aoide.data.Catalog
+import app.aoide.data.LocalMedia
 import app.aoide.data.Prefs
+import app.aoide.data.Quality
 import app.aoide.data.Track
 import app.aoide.data.YouTubeMusic
 import app.aoide.data.json
 import kotlinx.coroutines.runBlocking
+import kotlinx.serialization.encodeToString
 
 /**
  * The media pipeline, shared by the playback service and the tests so both run the same code.
@@ -24,19 +31,52 @@ import kotlinx.coroutines.runBlocking
  * Queue items are `aoide://track/{id}` DASH items. The resolver turns each into a real manifest on
  * ExoPlayer's loader thread the moment the song is reached, and stamps every request with a user
  * agent: googlevideo gets the one its stream was issued to, everything else gets Aoide's own.
+ * Songs from the phone's own storage (negative ids) play straight from their content URI.
  */
 @UnstableApi
 object AoideMedia {
+    private var appContext: Context? = null
+
     fun mediaSourceFactory(context: Context): MediaSource.Factory {
+        appContext = context.applicationContext
         // No factory-wide user agent: DefaultHttpDataSource would let it override the per-request one.
         val http = DefaultHttpDataSource.Factory().setConnectTimeoutMs(10_000).setReadTimeoutMs(15_000).setAllowCrossProtocolRedirects(true)
         return DefaultMediaSourceFactory(ResolvingDataSource.Factory(DefaultDataSource.Factory(context, http), Resolver))
     }
 
+    /** The queue item for a track: id, metadata for the notification and lock screen, and the track itself in the extras. */
+    fun mediaItemFor(t: Track, autoplay: Boolean = false): MediaItem {
+        TrackRegistry.put(t)
+        val extras = Bundle().apply { putString("track", json.encodeToString(t)); if (autoplay) putBoolean("autoplay", true) }
+        val meta = MediaMetadata.Builder()
+            .setTitle(t.title + (t.version?.let { " - $it" } ?: ""))
+            .setArtist(t.artistNames)
+            .setAlbumTitle(t.album?.title)
+            .setArtworkUri(Catalog.cover(t.album?.cover, 640)?.let(Uri::parse))
+            .setIsBrowsable(false)
+            .setIsPlayable(true)
+            .setMediaType(MediaMetadata.MEDIA_TYPE_MUSIC)
+            .setExtras(extras)
+            .build()
+        return MediaItem.Builder().setMediaId(t.id.toString()).setMediaMetadata(meta).build()
+    }
+
     /** MediaItems lose their URI crossing the session's IPC boundary; rebuild it from the id and keep the track for matching. */
     fun toPlayable(item: MediaItem): MediaItem {
-        item.mediaMetadata.extras?.getString("track")?.let { s -> runCatching { json.decodeFromString<Track>(s) }.getOrNull()?.let(TrackRegistry::put) }
-        return item.buildUpon().setUri(Uri.parse("aoide://track/${item.mediaId}")).setMimeType(MimeTypes.APPLICATION_MPD).build()
+        val id = item.mediaId.toLongOrNull()
+        val fromExtras = item.mediaMetadata.extras?.getString("track")?.let { s -> runCatching { json.decodeFromString<Track>(s) }.getOrNull() }
+        fromExtras?.let(TrackRegistry::put)
+        // A browser (Android Auto) sends a bare id: rebuild the whole item from the track the library handed out.
+        val base = if (fromExtras == null && id != null) TrackRegistry.get(id)?.let(::mediaItemFor) ?: item else item
+        if (id != null && LocalMedia.isLocal(id)) return base.buildUpon().setUri(Uri.parse(LocalMedia.uriFor(id))).setMimeType(null).build()
+        return base.buildUpon().setUri(Uri.parse("aoide://track/${item.mediaId}")).setMimeType(MimeTypes.APPLICATION_MPD).build()
+    }
+
+    /** Data saver drops to the smallest stream on a metered connection. */
+    fun effectiveQuality(): Quality {
+        if (!Prefs.dataSaver.on) return Prefs.quality.value
+        val cm = appContext?.getSystemService(Context.CONNECTIVITY_SERVICE) as? ConnectivityManager ?: return Prefs.quality.value
+        return if (runCatching { cm.isActiveNetworkMetered }.getOrDefault(false)) Quality.LOW else Prefs.quality.value
     }
 
     /** Runs on ExoPlayer's loader thread, so blocking network here is expected. */
@@ -44,13 +84,14 @@ object AoideMedia {
         override fun resolveDataSpec(dataSpec: DataSpec): DataSpec {
             if (dataSpec.uri.scheme == "aoide") {
                 val id = dataSpec.uri.lastPathSegment?.toLongOrNull() ?: throw IllegalArgumentException("Bad track uri ${dataSpec.uri}")
-                val resolved = runBlocking { StreamResolver.resolve(id, Prefs.quality.value) }
+                val resolved = runBlocking { StreamResolver.resolve(id, effectiveQuality()) }
                 return stamp(dataSpec.buildUpon().setUri(resolved.uri).build())
             }
             return stamp(dataSpec)
         }
 
         private fun stamp(spec: DataSpec): DataSpec {
+            if (spec.uri.scheme != "http" && spec.uri.scheme != "https") return spec
             val host = spec.uri.host ?: return spec
             val ua = if (host.endsWith("googlevideo.com")) YouTubeMusic.userAgentFor(spec.uri.getQueryParameter("c")) else ApiClient.UA
             return spec.withAdditionalHeaders(mapOf("User-Agent" to ua))

@@ -39,6 +39,8 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import app.aoide.data.Catalog
+import app.aoide.data.Downloads
+import androidx.compose.material.icons.filled.ArrowCircleDown
 import app.aoide.data.Track
 import app.aoide.data.formatTime
 import app.aoide.player.PlayerController
@@ -63,6 +65,8 @@ fun TrackRow(
     val haptics = rememberHaptics()
     val isCurrent = player.current?.id == track.id
     val playing = isCurrent && player.isPlaying
+    val downloads by Downloads.all.collectAsState()
+    val kept = downloads.containsKey(track.id)
     Row(
         Modifier.fillMaxWidth().combinedClickable(onClick = onClick, onLongClick = { Haptics.confirm(haptics); AppUi.openMenu(track, onRemove) }).padding(start = 16.dp, end = 4.dp, top = 6.dp, bottom = 6.dp)
             .semantics { contentDescription = "Track ${track.title} by ${track.artistNames}" }.testTag("track_row"),
@@ -86,9 +90,12 @@ fun TrackRow(
                 overflow = TextOverflow.Ellipsis,
             )
             val sub = subtitle ?: track.artistNames
-            if (sub.isNotBlank() || track.explicit || (number == null && playing)) Row(verticalAlignment = Alignment.CenterVertically) {
+            if (sub.isNotBlank() || track.explicit || kept || (number == null && playing)) Row(verticalAlignment = Alignment.CenterVertically) {
                 if (number == null && playing) {
                     Equaliser(); Spacer(Modifier.width(6.dp))
+                }
+                if (kept) {
+                    Icon(Icons.Filled.ArrowCircleDown, "Downloaded", tint = Aoide.accent, modifier = Modifier.size(14.dp).testTag("downloaded_mark")); Spacer(Modifier.width(5.dp))
                 }
                 if (track.explicit) {
                     Box(Modifier.clip(RoundedCornerShape(2.dp)).background(Aoide.subdued).padding(horizontal = 3.dp)) {

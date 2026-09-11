@@ -23,6 +23,10 @@ data class LibraryState(
     val recentTracks: List<Track> = emptyList(),
     val recentAlbums: List<Album> = emptyList(),
     val recentSearches: List<String> = emptyList(),
+    /** Track id -> times played, for the history screen. */
+    val plays: Map<Long, Int> = emptyMap(),
+    /** Track id -> last played, epoch ms. */
+    val playedAt: Map<Long, Long> = emptyMap(),
 ) {
     fun isLiked(id: Long) = liked.any { it.id == id }
     fun hasAlbum(id: Long) = albums.any { it.id == id }
@@ -79,8 +83,8 @@ object Library {
         return !has
     }
 
-    fun createPlaylist(title: String, tracks: List<Track> = emptyList()): LocalPlaylist {
-        val pl = LocalPlaylist("local-${System.currentTimeMillis().toString(36)}", title.trim().ifEmpty { "Untitled" }, tracks, System.currentTimeMillis())
+    fun createPlaylist(title: String, tracks: List<Track> = emptyList(), source: String? = null): LocalPlaylist {
+        val pl = LocalPlaylist("local-${System.currentTimeMillis().toString(36)}", title.trim().ifEmpty { "Untitled" }, tracks, System.currentTimeMillis(), source)
         update { it.copy(playlists = listOf(pl) + it.playlists) }
         return pl
     }
@@ -91,7 +95,28 @@ object Library {
     fun deletePlaylist(id: String) = update { s -> s.copy(playlists = s.playlists.filter { it.id != id }) }
     fun playlist(id: String): LocalPlaylist? = _state.value.playlists.find { it.id == id }
 
-    fun recordPlay(t: Track) = update { s -> s.copy(recentTracks = (listOf(t) + s.recentTracks.filter { it.id != t.id }).take(50)) }
+    fun recordPlay(t: Track) = update { s ->
+        s.copy(
+            recentTracks = (listOf(t) + s.recentTracks.filter { it.id != t.id }).take(100),
+            plays = s.plays + (t.id to ((s.plays[t.id] ?: 0) + 1)),
+            playedAt = s.playedAt + (t.id to System.currentTimeMillis()),
+        )
+    }
+
+    /** Songs an import found since the last sync go on the end; nothing the listener removed comes back. */
+    fun syncPlaylist(id: String, tracks: List<Track>) = update { s ->
+        s.copy(playlists = s.playlists.map { p -> if (p.id != id) p else p.copy(tracks = p.tracks + tracks.filter { t -> p.tracks.none { it.id == t.id } }) })
+    }
+
+    /** The whole library as JSON, for a backup file. */
+    fun export(): String = json.encodeToString(_state.value)
+
+    /** Replace the library from a backup; returns false if the file is not one. */
+    fun import(text: String): Boolean {
+        val parsed = runCatching { json.decodeFromString<LibraryState>(text) }.getOrNull() ?: return false
+        update { parsed }
+        return true
+    }
     fun recordAlbum(a: Album) = update { s -> s.copy(recentAlbums = (listOf(slim(a)) + s.recentAlbums.filter { it.id != a.id }).take(24)) }
     fun recordSearch(term: String) {
         val t = term.trim()
@@ -99,4 +124,5 @@ object Library {
         update { s -> s.copy(recentSearches = (listOf(t) + s.recentSearches.filter { !it.equals(t, true) }).take(8)) }
     }
     fun clearRecentSearches() = update { it.copy(recentSearches = emptyList()) }
+    fun clearHistory() = update { it.copy(recentTracks = emptyList(), plays = emptyMap(), playedAt = emptyMap()) }
 }
