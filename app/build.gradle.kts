@@ -25,8 +25,8 @@ android {
         applicationId = "app.aoide"
         minSdk = 26
         targetSdk = 35
-        versionCode = 3
-        versionName = "0.2.1"
+        versionCode = 4
+        versionName = "0.3.0"
         vectorDrawables.useSupportLibrary = true
     }
 
@@ -123,5 +123,7 @@ dependencies {
     testImplementation(platform("androidx.compose:compose-bom:2025.06.00"))
     testImplementation("androidx.compose.ui:ui-test-junit4")
     testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.10.2")
+    testImplementation("androidx.media3:media3-test-utils:1.7.1")
+    testImplementation("androidx.media3:media3-test-utils-robolectric:1.7.1")
     debugImplementation("androidx.compose.ui:ui-test-manifest")
 }

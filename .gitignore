@@ -19,3 +19,6 @@ web/node_modules
 web/dist
 web/dist-*
 web/.vite
+
+# Local agent-tooling state
+.claude-flow/

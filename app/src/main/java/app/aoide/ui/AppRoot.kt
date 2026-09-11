@@ -104,7 +104,7 @@ fun AppRoot() {
         val info = current?.let { infos[it.id] }
         if (info?.isPreview == true && !previewNoted) {
             Prefs.notePreview()
-            Toasts.show("This mirror serves 30-second previews. Add a subscribed instance in Settings for full songs.")
+            Toasts.show(if (Prefs.youtubeSource.value) "No match on YouTube Music for this song, so it plays as a 30-second preview." else "Songs play as 30-second previews. Turn on full songs in Settings.")
         }
     }
 

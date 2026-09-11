@@ -179,6 +179,7 @@ object PlayerController {
     private fun trackOf(item: MediaItem?): Track? = item?.mediaMetadata?.extras?.getString("track")?.let { runCatching { json.decodeFromString<Track>(it) }.getOrNull() }
 
     private fun mediaItem(t: Track): MediaItem {
+        TrackRegistry.put(t)
         val extras = Bundle().apply { putString("track", json.encodeToString(t)) }
         val meta = MediaMetadata.Builder()
             .setTitle(t.title + (t.version?.let { " - $it" } ?: ""))

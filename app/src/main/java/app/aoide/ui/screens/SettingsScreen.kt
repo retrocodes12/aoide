@@ -1,5 +1,11 @@
 package app.aoide.ui.screens
 
+import androidx.compose.ui.semantics.stateDescription
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.offset
+import androidx.compose.foundation.layout.Box
+import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -83,6 +89,8 @@ fun SettingsScreen(onBack: () -> Unit) {
     val down = remember(health, source) { Instances.mirrorsDown() }
     val granted = player.current?.let { infos[it.id]?.quality }
     val grantedLabel = granted?.let { g -> Quality.entries.find { it.name == g }?.label ?: g }
+    val grantedSource = player.current?.let { infos[it.id]?.source }
+    val yt by Prefs.youtubeSource.collectAsState()
 
     fun test(inst: Instance) {
         checking = inst.url
@@ -115,7 +123,14 @@ fun SettingsScreen(onBack: () -> Unit) {
             Text("Settings", style = MaterialTheme.typography.headlineSmall)
         }
 
-        Section("Streaming quality", if (down) "Every mirror is down, so songs come straight from TIDAL as 30-second previews. Lossless and the AAC tiers still apply; Hi-Res needs a mirror." else "Applies to the next song, and reloads the one playing.")
+        Section("Full songs", "Public mirrors only preview songs. With this on, Aoide finds the same recording on YouTube Music by artist, title and length, and streams it in full.")
+        ToggleRow("Full songs from YouTube Music", if (yt) "On. Opus at up to about 160 kbps. A song with no match plays as a 30-second preview." else "Off. Songs play as 30-second previews unless a mirror serves them in full.", yt, "youtube_toggle") { Prefs.setYouTubeSource(it); PlayerController.reloadCurrent() }
+
+        Section("Streaming quality", when {
+            yt -> "Full songs from YouTube Music play as Opus at up to about 160 kbps. Lossless and Hi-Res need a mirror backed by a subscription; Low picks the smaller stream."
+            down -> "Every mirror is down, so songs come straight from TIDAL as 30-second previews. Lossless and the AAC tiers still apply; Hi-Res needs a mirror."
+            else -> "Applies to the next song, and reloads the one playing."
+        })
         Quality.entries.forEach { q ->
             val unavailable = down && q == Quality.HI_RES_LOSSLESS
             val pick = { if (!unavailable) { Prefs.setQuality(q); PlayerController.reloadCurrent(); if (player.current != null) Toasts.show("${q.label}. Reloading the current song.") } }
@@ -126,6 +141,7 @@ fun SettingsScreen(onBack: () -> Unit) {
                     Text(
                         when {
                             unavailable -> "Not available on the TIDAL fallback"
+                            quality == q && grantedSource == "youtube" -> "${q.note}. This song is playing from YouTube Music as $granted."
                             quality == q && granted != null && granted != q.name -> "${q.note}. This song is only available as $grantedLabel."
                             else -> q.note
                         },
@@ -178,7 +194,7 @@ fun SettingsScreen(onBack: () -> Unit) {
             OutlinePill("Clear cache") { ApiClient.clearCache(); Toasts.show("Cache cleared") }
         }
 
-        Section("About", "Aoide, the muse of song. A phone player in the shape of Spotify with Apple Music's polish, on the Monochrome catalogue. Liked songs, playlists and history stay on this phone; nothing leaves it.\n\nSources: Monochrome hifi-api mirrors, TIDAL public catalogue, lrclib.net lyrics. Not affiliated with Spotify, Apple, TIDAL or Monochrome.")
+        Section("About", "Aoide, the muse of song. A phone player in the shape of Spotify with Apple Music's polish. Liked songs, playlists and history stay on this phone; nothing leaves it.\n\nSources: Monochrome hifi-api mirrors and TIDAL's public catalogue for browsing, YouTube Music for full-length audio, lrclib.net for lyrics. Not affiliated with Spotify, Apple, TIDAL, YouTube or Monochrome.")
         Spacer(Modifier.height(160.dp))
     }
 }
@@ -188,5 +204,25 @@ private fun Section(title: String, hint: String) {
     Column(Modifier.padding(horizontal = 16.dp).padding(top = 28.dp, bottom = 8.dp)) {
         Text(title, style = MaterialTheme.typography.titleLarge)
         Text(hint, style = MaterialTheme.typography.bodySmall, color = Aoide.subdued, modifier = Modifier.padding(top = 4.dp))
+    }
+}
+
+/** Spotify's switch: a pill that fills orange, a dark knob that slides across. */
+@Composable
+private fun ToggleRow(title: String, body: String, on: Boolean, tag: String, onChange: (Boolean) -> Unit) {
+    Row(
+        Modifier.fillMaxWidth().clickable { onChange(!on) }.padding(horizontal = 16.dp, vertical = 10.dp)
+            .semantics { contentDescription = title; stateDescription = if (on) "On" else "Off" }.testTag(tag),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Column(Modifier.weight(1f)) {
+            Text(title, style = MaterialTheme.typography.bodyLarge)
+            Text(body, style = MaterialTheme.typography.bodySmall, color = Aoide.subdued)
+        }
+        Spacer(Modifier.width(12.dp))
+        val knob by animateDpAsState(if (on) 18.dp else 0.dp, label = "knob")
+        Box(Modifier.width(44.dp).height(26.dp).clip(RoundedCornerShape(50)).background(if (on) Aoide.accent else Aoide.elevated2).padding(3.dp)) {
+            Box(Modifier.offset(x = knob).size(20.dp).clip(CircleShape).background(if (on) Aoide.accentInk else Aoide.subdued))
+        }
     }
 }

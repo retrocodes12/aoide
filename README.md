@@ -9,6 +9,7 @@
 
 ## What it does
 
+- Full songs from YouTube Music, matched to TIDAL's catalogue by artist, title and length, with 30-second previews only when no match exists.
 - Home with your quick grid, a hero card for the newest record, new releases, "more like" rows seeded from what you played, and mood rows.
 - Search across songs, albums, artists and playlists, with a top result, filter chips, recent searches and a browse grid.
 - Album, artist and playlist pages whose heads take the record's colour. The ink on every tint is chosen by measured contrast, so a yellow record gets dark ink and a navy one gets light, and both clear WCAG AA.
@@ -24,14 +25,13 @@
 
 ## How streaming works, honestly
 
-Monochrome is an open front end for TIDAL. Its public mirrors currently serve **30-second previews** unless the mirror is backed by a subscribed account. Aoide plays whatever the mirror returns and says so in the player: `LOSSLESS` for a full stream, `PREVIEW` for a clip. If you run or know a full-stream hifi-api instance, add it under **Settings → Instances**; your instances are tried first.
+Aoide browses TIDAL's catalogue through the Monochrome mirrors and plays each song from the best source that answers, in this order:
 
-Resolution order for a song:
+1. **A mirror of your own**, if you have added one under Settings, Instances. A mirror backed by a subscribed account serves lossless FLAC in full.
+2. **YouTube Music**, for the full song. Aoide searches YouTube Music's songs for the same artist and title, accepts only a recording within a few seconds of TIDAL's length, and asks YouTube's player API for its audio while identifying as one of YouTube's own apps. Today that is the Apple Vision Pro client, the one that hands out whole files. The stream is Opus at up to about 160 kbps, not lossless, and the player's badge says so. Every stream's last bytes are read before it plays, because some clients' links stop at about a minute.
+3. **The public mirrors and TIDAL's own manifest endpoint**, which serve 30-second previews, labelled PREVIEW in the player.
 
-1. `GET {instance}/track/?id=…&quality=…` on each configured mirror, which returns a base64 DASH manifest that ExoPlayer opens through a `data:` URI resolved on its loader thread the moment the song is reached.
-2. TIDAL's public manifest endpoint as a last resort. It honours the requested tier but only serves previews without a subscription.
-
-Aoide does not touch Monochrome's Turnstile-gated "Unified Playback" service. That gate is theirs to keep.
+The YouTube source can be switched off in Settings. It is unofficial and YouTube can change the rules at any time, so the list of clients to pose as lives in [`config/yt-clients.json`](config/yt-clients.json) and the app refreshes it from this repository, which means a broken client can be swapped without a new APK. Aoide only uses streams YouTube hands out as plain links: it does not decode YouTube's signature cipher or run its BotGuard challenge, and it does not touch Monochrome's Turnstile-gated "Unified Playback" service.
 
 ## Build
 
@@ -68,4 +68,4 @@ Spotify's structure: three tabs, a capsule mini player, a bottom-sheet track men
 
 ## Disclaimer
 
-Aoide is an independent project. It is not affiliated with Spotify, Apple, TIDAL or Monochrome. It plays what the mirrors you configure return; respect the terms of the services you use.
+Aoide is an independent project. It is not affiliated with Spotify, Apple, TIDAL, YouTube or Monochrome. It plays what the mirrors you configure and YouTube Music return. YouTube's terms of service do not allow third-party apps to stream its audio this way; respect the terms of the services you use.

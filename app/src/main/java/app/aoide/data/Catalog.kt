@@ -106,6 +106,9 @@ object Catalog {
         json.decodeFromString<DataWrap<Paged<RecItem>>>(ApiClient.get("/recommendations/?id=$trackId")).data.items.mapNotNull { it.track }
     }.getOrDefault(emptyList())
 
+    /** One track's metadata from TIDAL, for resolving a song the queue restored without it. */
+    suspend fun track(id: Long): Track = json.decodeFromString<Track>(ApiClient.nativeGet("/v1/tracks/$id"))
+
     suspend fun manifest(id: Long, quality: Quality): ManifestInfo =
         json.decodeFromString<DataWrap<ManifestInfo>>(ApiClient.get("/track/?id=$id&quality=${quality.name}", ttl = 20 * 60_000L)).data
 

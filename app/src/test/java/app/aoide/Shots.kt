@@ -106,7 +106,7 @@ class Shots {
     private fun album(): Pair<app.aoide.data.Album, List<Track>> = runBlocking { Catalog.album(ALBUM) }
 
     private fun playing(tracks: List<Track>, title: String, status: Status = Status.PLAYING) {
-        StreamResolver.setInfoForTest(StreamInfo(tracks[0].id, isPreview = true, quality = "LOSSLESS", bitDepth = null, sampleRate = null, source = "tidal"))
+        StreamResolver.setInfoForTest(StreamInfo(tracks[0].id, isPreview = false, quality = "OPUS 139 kbps", bitDepth = null, sampleRate = 48_000, source = "youtube"))
         PlayerController.setStateForTest(PlayerUiState(queue = tracks, index = 0, status = status, positionMs = 9_000, durationMs = 30_000, context = PlayContext("album", title, "album/$ALBUM")))
     }
 

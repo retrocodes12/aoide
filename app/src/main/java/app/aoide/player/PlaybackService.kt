@@ -27,9 +27,9 @@ import kotlinx.coroutines.runBlocking
 
 /**
  * Owns the ExoPlayer and the MediaSession. Queue items arrive from the app as
- * `aoide://track/{id}`; a ResolvingDataSource turns that into the real manifest on the loader
- * thread, right before ExoPlayer opens it, so a 100-track queue costs nothing until each track
- * is reached. Notification, lock screen and headset buttons come from Media3 for free.
+ * `aoide://track/{id}`; [AoideMedia] turns each into the real manifest on the loader thread, right
+ * before ExoPlayer opens it, so a 100-track queue costs nothing until each track is reached.
+ * Notification, lock screen and headset buttons come from Media3 for free.
  */
 @UnstableApi
 class PlaybackService : MediaSessionService() {
@@ -37,11 +37,8 @@ class PlaybackService : MediaSessionService() {
 
     override fun onCreate() {
         super.onCreate()
-        val http = DefaultHttpDataSource.Factory().setUserAgent(ApiClient.UA).setConnectTimeoutMs(10_000).setReadTimeoutMs(15_000).setAllowCrossProtocolRedirects(true)
-        val base = DefaultDataSource.Factory(this, http)
-        val resolving = ResolvingDataSource.Factory(base, Resolver())
         val player = ExoPlayer.Builder(this)
-            .setMediaSourceFactory(DefaultMediaSourceFactory(resolving))
+            .setMediaSourceFactory(AoideMedia.mediaSourceFactory(this))
             .setAudioAttributes(AudioAttributes.Builder().setUsage(C.USAGE_MEDIA).setContentType(C.AUDIO_CONTENT_TYPE_MUSIC).build(), true)
             .setHandleAudioBecomingNoisy(true)
             .setWakeMode(C.WAKE_MODE_NETWORK)
@@ -72,26 +69,16 @@ class PlaybackService : MediaSessionService() {
     private class Callback : MediaSession.Callback {
         override fun onAddMediaItems(mediaSession: MediaSession, controller: MediaSession.ControllerInfo, mediaItems: MutableList<MediaItem>): ListenableFuture<MutableList<MediaItem>> {
             val fixed = mediaItems.map { item ->
-                item.buildUpon().setUri(Uri.parse("aoide://track/${item.mediaId}")).setMimeType(MimeTypes.APPLICATION_MPD).build()
+                AoideMedia.toPlayable(item)
             }.toMutableList()
             return Futures.immediateFuture(fixed)
         }
 
         override fun onSetMediaItems(mediaSession: MediaSession, controller: MediaSession.ControllerInfo, mediaItems: MutableList<MediaItem>, startIndex: Int, startPositionMs: Long): ListenableFuture<MediaSession.MediaItemsWithStartPosition> {
             val fixed = mediaItems.map { item ->
-                item.buildUpon().setUri(Uri.parse("aoide://track/${item.mediaId}")).setMimeType(MimeTypes.APPLICATION_MPD).build()
+                AoideMedia.toPlayable(item)
             }
             return Futures.immediateFuture(MediaSession.MediaItemsWithStartPosition(ImmutableList.copyOf(fixed), startIndex, startPositionMs))
-        }
-    }
-
-    /** Runs on ExoPlayer's loader thread, so blocking network here is expected. */
-    private class Resolver : ResolvingDataSource.Resolver {
-        override fun resolveDataSpec(dataSpec: DataSpec): DataSpec {
-            if (dataSpec.uri.scheme != "aoide") return dataSpec
-            val id = dataSpec.uri.lastPathSegment?.toLongOrNull() ?: throw IllegalArgumentException("Bad track uri ${dataSpec.uri}")
-            val resolved = runBlocking { StreamResolver.resolve(id, Prefs.quality.value) }
-            return dataSpec.buildUpon().setUri(resolved.uri).build()
         }
     }
 }

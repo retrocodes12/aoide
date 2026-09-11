@@ -1,5 +1,6 @@
 package app.aoide.ui.screens
 
+import app.aoide.data.Prefs
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -180,9 +181,10 @@ fun HomeScreen(onNavigate: (String) -> Unit) {
         item {
             val health by Instances.health.collectAsState()
             val source by Instances.source.collectAsState()
+            val yt by Prefs.youtubeSource.collectAsState()
             val down = remember(health, source) { Instances.mirrorsDown() }
             Text(
-                (if (down) "Every Monochrome mirror is down right now; browsing TIDAL's catalogue directly, previews only. " else "Catalogue from Monochrome mirrors. ") + "Lyrics from lrclib.",
+                (if (down) "Every Monochrome mirror is down right now; browsing TIDAL's catalogue directly. " else "Catalogue from Monochrome mirrors. ") + (if (yt) "Full songs from YouTube Music. " else if (down) "Previews only. " else "") + "Lyrics from lrclib.",
                 style = MaterialTheme.typography.bodySmall, color = Aoide.subdued, modifier = Modifier.padding(16.dp).clickable { onNavigate("settings") }.testTag("source_note"),
             )
             Spacer(Modifier.height(140.dp))
