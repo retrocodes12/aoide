@@ -5,7 +5,8 @@
 **Download:** the latest APK is on the [Releases](https://github.com/retrocodes12/aoide/releases) page. Android 8.0 or newer, no account, no sign-up. A web preview of the same design runs at https://retrocodes12.github.io/aoide/ (phone-sized; open it on a phone or shrink the window).
 
 <p><img src="docs/home.png" width="180"> <img src="docs/album.png" width="180"> <img src="docs/now-playing.png" width="180"> <img src="docs/lyrics.png" width="180"></p>
-<p><img src="docs/artist.png" width="180"> <img src="docs/playlist.png" width="180"></p>
+<p><img src="docs/artist.png" width="180"> <img src="docs/playlist.png" width="180"> <img src="docs/library.png" width="180"> <img src="docs/history.png" width="180"></p>
+<p><img src="docs/import.png" width="180"> <img src="docs/equalizer.png" width="180"> <img src="docs/lyrics-translated.png" width="180"> <img src="docs/downloads.png" width="180"></p>
 
 ## What it does
 
