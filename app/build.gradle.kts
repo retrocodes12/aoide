@@ -14,8 +14,8 @@ plugins {
 val keystoreFile: File = (project.findProperty("aoideKeystore") as String?)?.let(::File)
     ?: File(System.getProperty("user.home"), ".aoide/release.jks")
 val keystorePassword = (project.findProperty("aoideStorePassword") as String?) ?: System.getenv("AOIDE_STORE_PASSWORD") ?: "aoide-release"
-val keyAlias = (project.findProperty("aoideKeyAlias") as String?) ?: "aoide"
-val keyPassword = (project.findProperty("aoideKeyPassword") as String?) ?: System.getenv("AOIDE_KEY_PASSWORD") ?: keystorePassword
+val signingAlias = (project.findProperty("aoideKeyAlias") as String?) ?: "aoide"
+val signingKeyPassword = (project.findProperty("aoideKeyPassword") as String?) ?: System.getenv("AOIDE_KEY_PASSWORD") ?: keystorePassword
 
 android {
     namespace = "app.aoide"
@@ -35,8 +35,9 @@ android {
             create("release") {
                 storeFile = keystoreFile
                 storePassword = keystorePassword
-                this.keyAlias = keyAlias
-                this.keyPassword = keyPassword
+                // Distinct names: inside this lambda `keyAlias` and `keyPassword` resolve to the receiver's own (null) properties.
+                keyAlias = signingAlias
+                keyPassword = signingKeyPassword
             }
         }
     }
