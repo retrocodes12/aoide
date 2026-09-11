@@ -1,7 +1,12 @@
 package app.aoide.ui
 
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
+import androidx.compose.animation.slideInHorizontally
+import androidx.compose.animation.slideOutHorizontally
+import androidx.compose.ui.unit.IntOffset
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInVertically
@@ -19,13 +24,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Home
-import androidx.compose.material.icons.filled.LibraryMusic
-import androidx.compose.material.icons.filled.Search
-import androidx.compose.material.icons.outlined.Home
-import androidx.compose.material.icons.outlined.LibraryMusic
-import androidx.compose.material.icons.outlined.Search
+import app.aoide.ui.components.AoideIcons
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
@@ -79,9 +78,9 @@ import kotlinx.coroutines.delay
 
 private data class Tab(val route: String, val label: String, val on: androidx.compose.ui.graphics.vector.ImageVector, val off: androidx.compose.ui.graphics.vector.ImageVector)
 private val TABS = listOf(
-    Tab("home", "Home", Icons.Filled.Home, Icons.Outlined.Home),
-    Tab("search", "Search", Icons.Filled.Search, Icons.Outlined.Search),
-    Tab("library", "Your Library", Icons.Filled.LibraryMusic, Icons.Outlined.LibraryMusic),
+    Tab("home", "Home", AoideIcons.Home, AoideIcons.HomeOutline),
+    Tab("search", "Search", AoideIcons.SearchBold, AoideIcons.Search),
+    Tab("library", "Your Library", AoideIcons.Library, AoideIcons.LibraryOutline),
 )
 
 @androidx.compose.ui.ExperimentalComposeUiApi
@@ -109,10 +108,21 @@ fun AppRoot() {
     }
 
     Box(Modifier.fillMaxSize().background(Aoide.ground).semantics { testTagsAsResourceId = true }) {
-        NavHost(nav, startDestination = "home", modifier = Modifier.fillMaxSize()) {
-            composable("home") { HomeScreen(navigate) }
-            composable("search?q={q}", arguments = listOf(navArgument("q") { nullable = true; defaultValue = null })) { SearchScreen(it.arguments?.getString("q"), navigate) }
-            composable("library") { LibraryScreen(navigate) }
+        // iOS's push: a detail screen slides in from the right over a fading parent, and slides back out on pop.
+        // The three tabs crossfade instead, as Spotify's do.
+        val push = spring<IntOffset>(dampingRatio = 1f, stiffness = 900f)
+        NavHost(
+            nav, startDestination = "home", modifier = Modifier.fillMaxSize(),
+            enterTransition = { slideInHorizontally(push) { it / 3 } + fadeIn(tween(180)) },
+            exitTransition = { slideOutHorizontally(push) { -it / 10 } + fadeOut(tween(160)) },
+            popEnterTransition = { slideInHorizontally(push) { -it / 10 } + fadeIn(tween(160)) },
+            popExitTransition = { slideOutHorizontally(push) { it / 3 } + fadeOut(tween(160)) },
+        ) {
+            val tab = fadeIn(tween(180))
+            val tabOut = fadeOut(tween(140))
+            composable("home", enterTransition = { tab }, exitTransition = { tabOut }, popEnterTransition = { tab }, popExitTransition = { tabOut }) { HomeScreen(navigate) }
+            composable("search?q={q}", arguments = listOf(navArgument("q") { nullable = true; defaultValue = null }), enterTransition = { tab }, exitTransition = { tabOut }, popEnterTransition = { tab }, popExitTransition = { tabOut }) { SearchScreen(it.arguments?.getString("q"), navigate) }
+            composable("library", enterTransition = { tab }, exitTransition = { tabOut }, popEnterTransition = { tab }, popExitTransition = { tabOut }) { LibraryScreen(navigate) }
             composable("liked") { LikedScreen({ nav.popBackStack() }) }
             composable("album/{id}", arguments = listOf(navArgument("id") { type = NavType.LongType })) { AlbumScreen(it.arguments!!.getLong("id"), { nav.popBackStack() }, navigate) }
             composable("artist/{id}", arguments = listOf(navArgument("id") { type = NavType.LongType })) { ArtistScreen(it.arguments!!.getLong("id"), { nav.popBackStack() }, navigate) }
@@ -140,7 +150,7 @@ fun AppRoot() {
             }
         }
 
-        AnimatedVisibility(AppUi.nowPlayingOpen, enter = slideInVertically(tween(280)) { it } + fadeIn(), exit = slideOutVertically(tween(220)) { it } + fadeOut()) {
+        AnimatedVisibility(AppUi.nowPlayingOpen, enter = slideInVertically(spring(dampingRatio = 0.9f, stiffness = Spring.StiffnessMediumLow)) { it } + fadeIn(tween(120)), exit = slideOutVertically(spring(dampingRatio = 1f, stiffness = Spring.StiffnessMedium)) { it } + fadeOut(tween(160))) {
             NowPlayingScreen(AppUi.player, navigate)
         }
         AnimatedVisibility(AppUi.lyricsOpen, enter = slideInVertically(tween(280)) { it }, exit = slideOutVertically(tween(220)) { it }) { LyricsScreen(AppUi.player) }

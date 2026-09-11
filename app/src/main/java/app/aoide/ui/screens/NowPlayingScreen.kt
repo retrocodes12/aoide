@@ -25,6 +25,12 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.pager.HorizontalPager
+import androidx.compose.foundation.pager.rememberPagerState
+import androidx.compose.runtime.snapshotFlow
+import app.aoide.ui.components.Haptics
+import app.aoide.ui.components.pressable
+import app.aoide.ui.components.rememberHaptics
 import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
@@ -117,6 +123,16 @@ fun NowPlayingScreen(tint: Tint, onNavigate: (String) -> Unit) {
     val lyrics by rememberResource("lyrics", t.id) { Catalog.lyrics(t) }
     val artScale by animateFloatAsState(if (s.isPlaying) 1f else 0.8f, spring(dampingRatio = 0.68f, stiffness = 260f), label = "art")
     val art = Catalog.cover(t.album?.cover, 640)
+    val haptics = rememberHaptics()
+    // The cover is a pager over the queue: swipe it to skip, and it follows along when a song ends.
+    val pager = rememberPagerState(initialPage = s.index.coerceAtLeast(0)) { s.queue.size.coerceAtLeast(1) }
+    LaunchedEffect(s.index) { if (s.index >= 0 && pager.currentPage != s.index && !pager.isScrollInProgress) pager.animateScrollToPage(s.index) }
+    LaunchedEffect(pager) {
+        snapshotFlow { pager.settledPage }.collect { page ->
+            val now = PlayerController.state.value
+            if (page != now.index && page in now.queue.indices) { Haptics.tap(haptics); PlayerController.jumpTo(page) }
+        }
+    }
     Box(Modifier.fillMaxSize().offset { IntOffset(0, drag.coerceAtLeast(0f).roundToInt()) }.background(tint.accent).testTag("now_playing")) {
         // Blurred artwork backdrop (a no-op below API 31, where the tint alone carries it)
         Artwork(art, Modifier.fillMaxSize().blur(70.dp), RoundedCornerShape(0.dp))
@@ -141,8 +157,13 @@ fun NowPlayingScreen(tint: Tint, onNavigate: (String) -> Unit) {
                 IconButton(onClick = { AppUi.openMenu(t) }, modifier = Modifier.semantics { contentDescription = "More options" }) { Icon(Icons.Filled.MoreVert, null, tint = Aoide.fg) }
             }
             Spacer(Modifier.height(28.dp))
-            Box(Modifier.padding(horizontal = 26.dp).fillMaxWidth().aspectRatio(1f), contentAlignment = Alignment.Center) {
-                Artwork(art, Modifier.fillMaxSize().scale(artScale).shadow(40.dp, RoundedCornerShape(12.dp), clip = false, ambientColor = Color.Black, spotColor = Color.Black), RoundedCornerShape(12.dp), contentDescription = t.album?.title)
+            HorizontalPager(pager, Modifier.fillMaxWidth().testTag("np_pager"), contentPadding = PaddingValues(horizontal = 26.dp), pageSpacing = 14.dp, beyondViewportPageCount = 1) { page ->
+                val q = s.queue.getOrNull(page) ?: t
+                val scale = if (page == s.index) artScale else 0.92f
+                // Each page is a square of its own width, so the cover is never cropped to the pager's full-width height.
+                Box(Modifier.fillMaxWidth().aspectRatio(1f), contentAlignment = Alignment.Center) {
+                    Artwork(Catalog.cover(q.album?.cover, 640), Modifier.fillMaxSize().scale(scale).shadow(40.dp, RoundedCornerShape(12.dp), clip = false, ambientColor = Color.Black, spotColor = Color.Black), RoundedCornerShape(12.dp), contentDescription = q.album?.title)
+                }
             }
             Spacer(Modifier.height(30.dp))
             Row(Modifier.padding(horizontal = 26.dp).fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
@@ -186,13 +207,13 @@ fun NowPlayingScreen(tint: Tint, onNavigate: (String) -> Unit) {
                 Text(if (known) "-" + formatTime((((1 - pos) * dur) / 1000).toInt()) else "-:--", style = MaterialTheme.typography.bodySmall, color = Aoide.fg.copy(alpha = .7f), modifier = Modifier.testTag("np_remaining"))
             }
             Row(Modifier.fillMaxWidth().padding(horizontal = 18.dp, vertical = 10.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween) {
-                IconButton(onClick = { PlayerController.toggleShuffle() }, modifier = Modifier.semantics { contentDescription = "Shuffle" }.testTag("np_shuffle")) { Icon(Icons.Filled.Shuffle, null, tint = if (s.shuffle) Aoide.accent else Aoide.fg.copy(alpha = .7f), modifier = Modifier.size(26.dp)) }
+                IconButton(onClick = { Haptics.tap(haptics); PlayerController.toggleShuffle() }, modifier = Modifier.semantics { contentDescription = "Shuffle" }.testTag("np_shuffle")) { Icon(Icons.Filled.Shuffle, null, tint = if (s.shuffle) Aoide.accent else Aoide.fg.copy(alpha = .7f), modifier = Modifier.size(26.dp)) }
                 IconButton(onClick = { PlayerController.prev() }, modifier = Modifier.semantics { contentDescription = "Previous" }.testTag("np_prev")) { Icon(Icons.Filled.SkipPrevious, null, tint = Aoide.fg, modifier = Modifier.size(42.dp)) }
-                Box(Modifier.size(72.dp).clip(CircleShape).background(Aoide.fg).clickable { PlayerController.toggle() }.semantics { contentDescription = if (failed) "Retry" else if (s.isPlaying) "Pause" else "Play" }.testTag("np_toggle"), contentAlignment = Alignment.Center) {
+                Box(Modifier.pressable { Haptics.confirm(haptics); PlayerController.toggle() }.size(72.dp).clip(CircleShape).background(Aoide.fg).semantics { contentDescription = if (failed) "Retry" else if (s.isPlaying) "Pause" else "Play" }.testTag("np_toggle"), contentAlignment = Alignment.Center) {
                     Icon(if (failed) Icons.Filled.Refresh else if (s.isPlaying) Icons.Filled.Pause else Icons.Filled.PlayArrow, null, tint = Aoide.base, modifier = Modifier.size(38.dp))
                 }
                 IconButton(onClick = { PlayerController.next() }, modifier = Modifier.semantics { contentDescription = "Next" }.testTag("np_next")) { Icon(Icons.Filled.SkipNext, null, tint = Aoide.fg, modifier = Modifier.size(42.dp)) }
-                IconButton(onClick = { PlayerController.cycleRepeat() }, modifier = Modifier.semantics { contentDescription = "Repeat" }.testTag("np_repeat")) {
+                IconButton(onClick = { Haptics.tap(haptics); PlayerController.cycleRepeat() }, modifier = Modifier.semantics { contentDescription = "Repeat" }.testTag("np_repeat")) {
                     Icon(if (s.repeat == Player.REPEAT_MODE_ONE) Icons.Filled.RepeatOne else Icons.Filled.Repeat, null, tint = if (s.repeat != Player.REPEAT_MODE_OFF) Aoide.accent else Aoide.fg.copy(alpha = .7f), modifier = Modifier.size(26.dp))
                 }
             }

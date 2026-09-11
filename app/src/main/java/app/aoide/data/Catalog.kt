@@ -49,6 +49,18 @@ object Catalog {
         )
     }
 
+    /**
+     * TIDAL's editorial playlists for the shelves a fresh install shows before it knows the listener:
+     * one search per theme, keeping only lists TIDAL itself curates, deduplicated.
+     */
+    suspend fun editorialPlaylists(): List<Playlist> = coroutineScope {
+        val themes = listOf("Top Hits", "Pop Hits", "Hip-Hop Hits", "Rock Classics", "R&B", "Indie", "Chill", "Workout", "Throwback", "New Music")
+        val found = themes.map { t -> async { runCatching { searchPlaylists(t, 6) }.getOrDefault(emptyList()) } }.map { it.await() }
+        val seen = LinkedHashSet<String>()
+        found.flatMap { list -> list.filter { it.type == "EDITORIAL" || it.creator?.id == null || it.creator.id == 0L }.take(2) }
+            .filter { seen.add(it.uuid) }
+    }
+
     suspend fun searchPlaylists(term: String, limit: Int = 25): List<Playlist> =
         json.decodeFromString<DataWrap<SearchAll>>(ApiClient.get("/search/?p=${enc(term)}&limit=$limit")).data.playlists?.items ?: emptyList()
 

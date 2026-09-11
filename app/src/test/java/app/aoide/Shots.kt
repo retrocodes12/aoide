@@ -6,6 +6,9 @@ import androidx.compose.ui.test.onAllNodesWithTag
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onRoot
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performScrollToIndex
+import androidx.compose.ui.test.performScrollToNode
+import androidx.compose.ui.test.hasTestTag
 import androidx.compose.ui.test.performImeAction
 import androidx.compose.ui.test.performTextInput
 import androidx.test.ext.junit.runners.AndroidJUnit4
@@ -110,7 +113,11 @@ class Shots {
         PlayerController.setStateForTest(PlayerUiState(queue = tracks, index = 0, status = status, positionMs = 9_000, durationMs = 30_000, context = PlayContext("album", title, "album/$ALBUM")))
     }
 
-    @Test fun home() { launch(); await { has("hero_card") }; settle(2500); shot("01-home") }
+    @Test fun home() {
+        launch(); await { has("hero_card") }; settle(5000); shot("01-home")
+        // Lazy lists compose nothing below the fold, so scroll to the shelves before looking for them.
+        rule.onNodeWithTag("home").performScrollToNode(hasTestTag("popular_card")); await { has("popular_card") }; settle(5000); shot("01b-home-shelves")
+    }
 
     @Test fun searchBrowse() { launch(); rule.onNodeWithTag("tab_search").performClick(); await { has("browse_tile") }; settle(1200); shot("02-search-browse") }
 
@@ -126,6 +133,7 @@ class Shots {
         launch(); val (a, tracks) = album(); playing(tracks, a.title)
         await { has("hero_card") }
         navigate("album/$ALBUM"); await { has("track_row") }; settle(2500); shot("04-album")
+        rule.onNodeWithTag("album_screen").performScrollToIndex(7); await { has("collapsing_bar") }; settle(800); shot("20-album-collapsed")
     }
 
     @Test fun artistPage() { launch(); navigate("artist/$ARTIST"); await { has("track_row") }; settle(8000); shot("05-artist") }

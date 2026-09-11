@@ -100,7 +100,7 @@ fun SectionTitle(text: String, modifier: Modifier = Modifier, onSeeAll: (() -> U
 @Composable
 fun MediaCard(image: String?, title: String, subtitle: String?, round: Boolean = false, width: Dp = 156.dp, tag: String = "card", onClick: () -> Unit) {
     val shape = if (round) CircleShape else RoundedCornerShape(10.dp)
-    Column(Modifier.width(width).clickable(onClick = onClick).testTag(tag)) {
+    Column(Modifier.width(width).pressable(onClick = onClick).testTag(tag)) {
         Artwork(image, Modifier.size(width).shadow(10.dp, shape, clip = false, ambientColor = Color.Black, spotColor = Color.Black).semantics { contentDescription = title }, shape = shape)
         Spacer(Modifier.height(10.dp))
         Text(title, style = MaterialTheme.typography.titleSmall.copy(fontWeight = androidx.compose.ui.text.font.FontWeight.SemiBold), maxLines = 1, overflow = TextOverflow.Ellipsis, color = Aoide.fg)
@@ -121,7 +121,7 @@ fun Chip(text: String, selected: Boolean, onClick: () -> Unit) {
     val bg = if (selected) Aoide.fg else Aoide.highlight
     val fg = if (selected) Aoide.base else Aoide.fg
     Box(
-        Modifier.clip(RoundedCornerShape(50)).background(bg).clickable(onClick = onClick).padding(horizontal = 14.dp, vertical = 8.dp).semantics { contentDescription = "Filter $text" },
+        Modifier.pressable(onClick = onClick).clip(RoundedCornerShape(50)).background(bg).padding(horizontal = 14.dp, vertical = 8.dp).semantics { contentDescription = "Filter $text" },
     ) { Text(text, style = MaterialTheme.typography.labelLarge.copy(fontWeight = androidx.compose.ui.text.font.FontWeight.Medium), color = fg) }
 }
 
@@ -129,7 +129,7 @@ fun Chip(text: String, selected: Boolean, onClick: () -> Unit) {
 @Composable
 fun PlayFab(playing: Boolean, size: Dp = 56.dp, enabled: Boolean = true, onClick: () -> Unit) {
     Box(
-        Modifier.size(size).clip(CircleShape).background(if (enabled) Aoide.accent else Aoide.elevated2).clickable(enabled = enabled, onClick = onClick)
+        Modifier.pressable(enabled = enabled, onClick = onClick).size(size).clip(CircleShape).background(if (enabled) Aoide.accent else Aoide.elevated2)
             .semantics { contentDescription = if (playing) "Pause" else "Play" }.testTag("play_fab"),
         contentAlignment = Alignment.Center,
     ) {
@@ -141,7 +141,7 @@ fun PlayFab(playing: Boolean, size: Dp = 56.dp, enabled: Boolean = true, onClick
 @Composable
 fun IconDisc(icon: ImageVector, description: String, modifier: Modifier = Modifier, tint: Color = Color.White, onClick: () -> Unit) {
     Box(
-        modifier.size(40.dp).clip(CircleShape).background(Color.Black.copy(alpha = .5f)).clickable(onClick = onClick).semantics { contentDescription = description },
+        modifier.pressable(onClick = onClick).size(40.dp).clip(CircleShape).background(Color.Black.copy(alpha = .5f)).semantics { contentDescription = description },
         contentAlignment = Alignment.Center,
     ) { Icon(icon, null, tint = tint, modifier = Modifier.size(24.dp)) }
 }
@@ -151,8 +151,9 @@ fun IconDisc(icon: ImageVector, description: String, modifier: Modifier = Modifi
 fun LikeButton(track: Track, size: Dp = 24.dp, modifier: Modifier = Modifier, tint: Color = Aoide.subdued) {
     val lib by Library.state.collectAsState()
     val liked = lib.isLiked(track.id)
+    val haptics = rememberHaptics()
     IconButton(
-        onClick = { Toasts.show(if (Library.toggleLike(track)) "Added to Liked Songs" else "Removed from Liked Songs") },
+        onClick = { Haptics.confirm(haptics); Toasts.show(if (Library.toggleLike(track)) "Added to Liked Songs" else "Removed from Liked Songs") },
         modifier = modifier.semantics { contentDescription = if (liked) "Remove from Liked Songs" else "Add to Liked Songs" }.testTag("like"),
     ) {
         Icon(if (liked) Icons.Filled.CheckCircle else Icons.Outlined.AddCircleOutline, null, tint = if (liked) Aoide.accent else tint, modifier = Modifier.size(size))

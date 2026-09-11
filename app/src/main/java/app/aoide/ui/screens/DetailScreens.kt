@@ -15,6 +15,8 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.rememberLazyListState
+import app.aoide.ui.components.CollapsingBar
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
@@ -133,7 +135,9 @@ fun AlbumScreen(id: Long, onBack: () -> Unit, onNavigate: (String) -> Unit) {
     val thisPlaying = player.context?.href == ctx.href && player.isPlaying
     if (r is Resource.Failed) return Column { BackRow(onBack); ErrorState(r.error, what = "album", onHome = { onNavigate("home") }) { r.reload() } }
     val albumArtist = album?.primaryArtist?.name
-    LazyColumn(Modifier.testTag("album_screen")) {
+    val list = rememberLazyListState()
+    Box {
+    LazyColumn(Modifier.testTag("album_screen"), state = list) {
         item {
             DetailHeader(
                 tint = tint, image = Catalog.cover(album?.cover, 640), title = album?.title ?: "",
@@ -177,6 +181,10 @@ fun AlbumScreen(id: Long, onBack: () -> Unit, onNavigate: (String) -> Unit) {
         }
         item { Spacer(Modifier.height(160.dp)) }
     }
+    CollapsingBar(list, album?.title ?: "", tint, 330.dp, onBack) {
+        if (album != null) IconButton(onClick = { Toasts.show(if (Library.toggleAlbum(album)) "Added to Your Library" else "Removed from Your Library") }) { Icon(if (lib.hasAlbum(album.id)) Icons.Filled.CheckCircle else Icons.Outlined.AddCircleOutline, "Save", tint = if (lib.hasAlbum(album.id)) Aoide.accent else Color.White) }
+    }
+    }
 }
 
 fun prettyDate(iso: String): String = runCatching {
@@ -203,7 +211,9 @@ fun PlaylistScreen(uuid: String, onBack: () -> Unit, onNavigate: (String) -> Uni
     val ctx = PlayContext("playlist", p?.title ?: "", "playlist/$uuid")
     val thisPlaying = player.context?.href == ctx.href && player.isPlaying
     if (r is Resource.Failed) return Column { BackRow(onBack); ErrorState(r.error, what = "playlist", onHome = { onNavigate("home") }) { r.reload() } }
-    LazyColumn(Modifier.testTag("playlist_screen")) {
+    val list = rememberLazyListState()
+    Box {
+    LazyColumn(Modifier.testTag("playlist_screen"), state = list) {
         item {
             DetailHeader(
                 tint = tint, image = p?.let { Catalog.playlistImage(it, 640) }, title = p?.title ?: "", description = p?.cleanDescription,
@@ -226,6 +236,8 @@ fun PlaylistScreen(uuid: String, onBack: () -> Unit, onNavigate: (String) -> Uni
         items(tracks, key = { "${it.id}" }) { t -> TrackRow(t, onClick = { PlayerController.playTracks(tracks, tracks.indexOf(t), ctx) }) }
         item { Spacer(Modifier.height(160.dp)) }
     }
+    CollapsingBar(list, p?.title ?: "", tint, 330.dp, onBack)
+    }
 }
 
 @Composable
@@ -239,7 +251,9 @@ fun LocalPlaylistScreen(id: String, onBack: () -> Unit) {
     LaunchedEffect(tint) { AppUi.page = tint }
     val ctx = PlayContext("playlist", pl.title, "local/${pl.id}")
     val thisPlaying = player.context?.href == ctx.href && player.isPlaying
-    LazyColumn(Modifier.testTag("local_playlist_screen")) {
+    val list = rememberLazyListState()
+    Box {
+    LazyColumn(Modifier.testTag("local_playlist_screen"), state = list) {
         item {
             DetailHeader(
                 tint = tint, image = Catalog.cover(pl.tracks.firstOrNull()?.album?.cover, 640), title = pl.title,
@@ -264,6 +278,8 @@ fun LocalPlaylistScreen(id: String, onBack: () -> Unit) {
             TrackRow(t, onClick = { PlayerController.playTracks(pl.tracks, i, ctx) }, onRemove = { Library.removeFromPlaylist(pl.id, i); Toasts.show("Removed from ${pl.title}") })
         }
         item { Spacer(Modifier.height(160.dp)) }
+    }
+    CollapsingBar(list, pl.title, tint, 330.dp, onBack)
     }
     if (rename) {
         app.aoide.ui.components.NameSheet("Rename playlist", pl.title, "Save", "rename_input", "rename_save", onDismiss = { rename = false }) { name ->
@@ -322,7 +338,9 @@ fun ArtistScreen(id: Long, onBack: () -> Unit, onNavigate: (String) -> Unit) {
     val allAlbums = (disco as? Resource.Ready)?.value?.first.orEmpty()
     val counts = allAlbums.groupingBy { it.type ?: "ALBUM" }.eachCount()
     val albums = allAlbums.filter { filter == "ALL" || (it.type ?: "ALBUM") == filter }.sortedByDescending { it.releaseDate ?: "" }
-    LazyColumn(Modifier.testTag("artist_screen")) {
+    val list = rememberLazyListState()
+    Box {
+    LazyColumn(Modifier.testTag("artist_screen"), state = list) {
         item {
             val h = if (a != null && a.picture == null) 240.dp else 320.dp
             Box(Modifier.fillMaxWidth().height(h)) {
@@ -395,6 +413,8 @@ fun ArtistScreen(id: Long, onBack: () -> Unit, onNavigate: (String) -> Unit) {
             }
         }
         item { Spacer(Modifier.height(160.dp)) }
+    }
+    CollapsingBar(list, a?.name ?: "", tint, 250.dp, onBack)
     }
 }
 

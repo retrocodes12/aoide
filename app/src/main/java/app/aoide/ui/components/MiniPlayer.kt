@@ -1,7 +1,18 @@
 package app.aoide.ui.components
 
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.spring
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.Orientation
+import androidx.compose.foundation.gestures.draggable
+import androidx.compose.foundation.gestures.rememberDraggableState
+import androidx.compose.foundation.layout.offset
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.ui.unit.IntOffset
+import kotlinx.coroutines.launch
+import kotlin.math.abs
+import kotlin.math.roundToInt
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -55,10 +66,22 @@ fun MiniPlayer(tint: Tint) {
     val info = infos[t.id]
     val failed = s.status == Status.ERROR
     val progress = if (s.durationMs > 0) (s.positionMs.toFloat() / s.durationMs).coerceIn(0f, 1f) else 0f
+    // Spotify's capsule gesture: drag it sideways and let go to skip; it springs back either way.
+    val scope = rememberCoroutineScope()
+    val haptics = rememberHaptics()
+    val slide = remember { Animatable(0f) }
+    val drag = rememberDraggableState { dx -> scope.launch { slide.snapTo((slide.value + dx).coerceIn(-160f, 160f)) } }
     Column(
-        Modifier.padding(horizontal = 10.dp).fillMaxWidth().shadow(18.dp, RoundedCornerShape(12.dp), clip = false, ambientColor = Color.Black, spotColor = Color.Black)
+        Modifier.padding(horizontal = 10.dp).fillMaxWidth().offset { IntOffset(slide.value.roundToInt(), 0) }
+            .shadow(18.dp, RoundedCornerShape(12.dp), clip = false, ambientColor = Color.Black, spotColor = Color.Black)
             .clip(RoundedCornerShape(12.dp)).background(tint.accent).background(Color.Black.copy(alpha = .6f))
-            .clickable { AppUi.nowPlayingOpen = true }.testTag("mini_player"),
+            .draggable(drag, Orientation.Horizontal, onDragStopped = { velocity ->
+                val x = slide.value
+                if (x < -70f || velocity < -900f) { Haptics.tap(haptics); PlayerController.next() }
+                else if (x > 70f || velocity > 900f) { Haptics.tap(haptics); PlayerController.prev() }
+                slide.animateTo(0f, spring(dampingRatio = 0.7f, stiffness = 500f))
+            })
+            .pressable { AppUi.nowPlayingOpen = true }.testTag("mini_player"),
     ) {
         Row(Modifier.padding(start = 8.dp, top = 8.dp, bottom = 8.dp, end = 2.dp), verticalAlignment = Alignment.CenterVertically) {
             Artwork(Catalog.cover(t.album?.cover, 160), Modifier.size(42.dp).shadow(6.dp, RoundedCornerShape(6.dp), clip = false), RoundedCornerShape(6.dp))

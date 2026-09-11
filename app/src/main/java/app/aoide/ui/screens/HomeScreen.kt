@@ -1,5 +1,12 @@
 package app.aoide.ui.screens
 
+import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.async
+import app.aoide.ui.plural
+import app.aoide.ui.components.pressable
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.foundation.layout.fillMaxSize
 import app.aoide.data.Prefs
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -74,8 +81,17 @@ fun HomeScreen(onNavigate: (String) -> Unit) {
     val lib by Library.state.collectAsState()
     val scope = rememberCoroutineScope()
     val arrivals by rememberResource("arrivals") { Catalog.playlist(NEW_ARRIVALS) }
+    // TIDAL's own curated lists fill the shelves until the listener's history can.
+    val editorial by rememberResource("editorial") { Catalog.editorialPlaylists() }
+    val lead = (editorial as? Resource.Ready)?.value?.firstOrNull()
+    val popular by rememberResource("popular", lead?.uuid) { lead?.let { Catalog.playlist(it.uuid).second.take(14) } ?: emptyList() }
+    val popularTracks = (popular as? Resource.Ready)?.value.orEmpty()
+    val artistIds = remember(popularTracks) { popularTracks.mapNotNull { it.primaryArtist?.id }.distinct().take(10) }
+    val artists by rememberResource("artists", artistIds) { coroutineScope { artistIds.map { id -> async { runCatching { Catalog.artist(id) }.getOrNull() } }.mapNotNull { it.await() } } }
     val seed = lib.recentTracks.firstOrNull()
     val because by rememberResource("because", seed?.id) { seed?.let { Catalog.recommendations(it.id) } ?: emptyList() }
+    val recentAlbum = lib.recentAlbums.firstOrNull()
+    val similar by rememberResource("similar-home", recentAlbum?.id) { recentAlbum?.let { Catalog.similarAlbums(it.id) } ?: emptyList() }
     val hour = Calendar.getInstance().get(Calendar.HOUR_OF_DAY)
     val greeting = when {
         hour < 5 -> "Good night"
@@ -83,8 +99,15 @@ fun HomeScreen(onNavigate: (String) -> Unit) {
         hour < 18 -> "Good afternoon"
         else -> "Good evening"
     }
+    // A wash of colour behind the greeting, keyed to the time of day: amber mornings, teal afternoons, violet evenings, indigo nights.
+    val wash = when {
+        hour < 5 -> Color(0xFF1B2140)
+        hour < 12 -> Color(0xFF4A3316)
+        hour < 18 -> Color(0xFF123A3C)
+        else -> Color(0xFF32214A)
+    }
 
-    // Quick grid: Liked Songs, then your playlists and recent records, up to 8
+    // Quick grid: Liked Songs, your playlists and recent records, then TIDAL's lists until there are eight
     data class Quick(val key: String, val title: String, val image: String?, val liked: Boolean = false, val onOpen: () -> Unit)
     val quick = buildList {
         add(Quick("liked", "Liked Songs", null, liked = true) { onNavigate("liked") })
@@ -95,9 +118,16 @@ fun HomeScreen(onNavigate: (String) -> Unit) {
             if (any { it.key == "a${a.id}" }) continue
             add(Quick("a${a.id}", a.title, Catalog.cover(a.cover, 160)) { onNavigate("album/${a.id}") })
         }
+        for (p in (editorial as? Resource.Ready)?.value.orEmpty()) {
+            if (size >= 8) break
+            if (any { it.key == p.uuid }) continue
+            add(Quick(p.uuid, p.title, Catalog.playlistImage(p, 160)) { onNavigate("playlist/${p.uuid}") })
+        }
     }
 
-    LazyColumn(Modifier.testTag("home")) {
+    Box(Modifier.fillMaxSize()) {
+        Box(Modifier.fillMaxWidth().height(300.dp).background(Brush.verticalGradient(listOf(wash, Aoide.ground))))
+        LazyColumn(Modifier.fillMaxSize().testTag("home")) {
         item {
             Row(Modifier.statusBarsPadding().fillMaxWidth().padding(start = 16.dp, end = 4.dp, top = 12.dp), verticalAlignment = Alignment.CenterVertically) {
                 Text(greeting, style = MaterialTheme.typography.headlineMedium, modifier = Modifier.weight(1f))
@@ -110,7 +140,7 @@ fun HomeScreen(onNavigate: (String) -> Unit) {
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         pair.forEach { q ->
                             Row(
-                                Modifier.weight(1f).height(56.dp).clip(RoundedCornerShape(4.dp)).background(Aoide.highlight).clickable(onClick = q.onOpen).testTag("quick_${q.key}"),
+                                Modifier.weight(1f).height(56.dp).pressable(onClick = q.onOpen).clip(RoundedCornerShape(6.dp)).background(Color.White.copy(alpha = .12f)).testTag("quick_${q.key}"),
                                 verticalAlignment = Alignment.CenterVertically,
                             ) {
                                 if (q.liked) LikedTile(56.dp, RoundedCornerShape(0.dp)) else app.aoide.ui.components.Artwork(q.image, Modifier.size(56.dp), RoundedCornerShape(0.dp))
@@ -120,7 +150,7 @@ fun HomeScreen(onNavigate: (String) -> Unit) {
                         if (pair.size == 1) Spacer(Modifier.weight(1f))
                     }
                 }
-                if (quick.size < 3) Text("Albums and playlists you open land here.", style = MaterialTheme.typography.bodySmall, color = Aoide.subdued, modifier = Modifier.padding(top = 4.dp))
+                if (quick.size < 3 && editorial is Resource.Loading) Text("Albums and playlists you open land here.", style = MaterialTheme.typography.bodySmall, color = Aoide.subdued, modifier = Modifier.padding(top = 4.dp))
             }
         }
 
@@ -134,9 +164,9 @@ fun HomeScreen(onNavigate: (String) -> Unit) {
                     Column {
                         albums.firstOrNull()?.let { lead ->
                             // Apple-style hero: one big card for the newest record
-                            Box(Modifier.padding(horizontal = 16.dp).fillMaxWidth().clip(RoundedCornerShape(14.dp)).background(Aoide.elevated).clickable { onNavigate("album/${lead.id}") }.testTag("hero_card")) {
+                            Box(Modifier.padding(horizontal = 16.dp).fillMaxWidth().pressable { onNavigate("album/${lead.id}") }.clip(RoundedCornerShape(14.dp)).background(Aoide.elevated).testTag("hero_card")) {
                                 app.aoide.ui.components.Artwork(Catalog.cover(lead.cover, 640), Modifier.fillMaxWidth().height(200.dp), RoundedCornerShape(0.dp))
-                                Box(Modifier.fillMaxWidth().height(200.dp).background(androidx.compose.ui.graphics.Brush.verticalGradient(listOf(androidx.compose.ui.graphics.Color.Transparent, androidx.compose.ui.graphics.Color.Black.copy(alpha = .75f)))))
+                                Box(Modifier.fillMaxWidth().height(200.dp).background(Brush.verticalGradient(listOf(Color.Transparent, Color.Black.copy(alpha = .75f)))))
                                 Column(Modifier.align(Alignment.BottomStart).padding(16.dp)) {
                                     Text("JUST ADDED", style = MaterialTheme.typography.labelSmall, color = Aoide.accent)
                                     Text(lead.title, style = MaterialTheme.typography.headlineSmall, color = Aoide.fg, maxLines = 1, overflow = TextOverflow.Ellipsis)
@@ -153,6 +183,17 @@ fun HomeScreen(onNavigate: (String) -> Unit) {
             }
         }
 
+        if (lib.recentTracks.isNotEmpty()) {
+            item { SectionTitle("Jump back in", onSeeAll = { onNavigate("library") }) }
+            item {
+                CardRow(lib.recentTracks.take(12), { it.id }) { t ->
+                    MediaCard(Catalog.cover(t.album?.cover, 320), t.title, t.artistNames, tag = "recent_card") {
+                        scope.launch { PlayerController.playTracks(lib.recentTracks, lib.recentTracks.indexOfFirst { it.id == t.id }, PlayContext("recent", "Recently played")) }
+                    }
+                }
+            }
+        }
+
         if (seed != null && because is Resource.Ready && (because as Resource.Ready).value.isNotEmpty()) {
             item { SectionTitle("More like ${seed.title}") }
             item {
@@ -163,18 +204,36 @@ fun HomeScreen(onNavigate: (String) -> Unit) {
             }
         }
 
-        if (lib.recentTracks.isNotEmpty()) {
-            item { SectionTitle("Recently played", onSeeAll = { onNavigate("library") }) }
+        if (popularTracks.isNotEmpty() && lead != null) {
+            item { SectionTitle("Popular right now", onSeeAll = { onNavigate("playlist/${lead.uuid}") }) }
             item {
-                CardRow(lib.recentTracks.take(12), { it.id }) { t ->
-                    MediaCard(Catalog.cover(t.album?.cover, 320), t.title, t.artistNames, tag = "recent_card") {
-                        scope.launch { PlayerController.playTracks(lib.recentTracks, lib.recentTracks.indexOfFirst { it.id == t.id }, PlayContext("recent", "Recently played")) }
+                CardRow(popularTracks, { it.id }) { t ->
+                    MediaCard(Catalog.cover(t.album?.cover, 320), t.title, t.artistNames, tag = "popular_card") {
+                        PlayerController.playTracks(popularTracks, popularTracks.indexOfFirst { it.id == t.id }, PlayContext("playlist", lead.title, "playlist/${lead.uuid}"))
                     }
                 }
             }
         }
 
-        listOf("chill" to "Chill", "focus" to "Focus", "workout" to "Workout", "party" to "Party").forEach { (term, title) ->
+        val stars = (artists as? Resource.Ready)?.value.orEmpty()
+        if (stars.isNotEmpty()) {
+            item { SectionTitle("Popular artists") }
+            item { CardRow(stars, { it.id }) { ar -> MediaCard(Catalog.artistPicture(ar.picture, 320), ar.name, "Artist", round = true, width = 140.dp) { onNavigate("artist/${ar.id}") } } }
+        }
+
+        val curated = (editorial as? Resource.Ready)?.value.orEmpty()
+        if (curated.size > 1) {
+            item { SectionTitle("Playlists for you") }
+            item { CardRow(curated.drop(1).take(12), { it.uuid }) { p -> MediaCard(Catalog.playlistImage(p, 320), p.title, p.cleanDescription.ifBlank { p.numberOfTracks?.let { plural(it, "song") } }) { onNavigate("playlist/${p.uuid}") } } }
+        }
+
+        val alike = (similar as? Resource.Ready)?.value.orEmpty()
+        if (recentAlbum != null && alike.isNotEmpty()) {
+            item { SectionTitle("Because you played ${recentAlbum.title}") }
+            item { CardRow(alike.take(12), { it.id }) { a -> MediaCard(Catalog.cover(a.cover, 320), a.title, a.primaryArtist?.name) { onNavigate("album/${a.id}") } } }
+        }
+
+        listOf("chill" to "Chill", "focus" to "Focus", "party" to "Party").forEach { (term, title) ->
             item { MoodRow(term, title, onNavigate) }
         }
         item { Spacer(Modifier.height(24.dp)) }
@@ -188,6 +247,7 @@ fun HomeScreen(onNavigate: (String) -> Unit) {
                 style = MaterialTheme.typography.bodySmall, color = Aoide.subdued, modifier = Modifier.padding(16.dp).clickable { onNavigate("settings") }.testTag("source_note"),
             )
             Spacer(Modifier.height(140.dp))
+        }
         }
     }
 }

@@ -7,7 +7,7 @@ import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -60,10 +60,11 @@ fun TrackRow(
     onRemove: (() -> Unit)? = null,
 ) {
     val player by PlayerController.state.collectAsState()
+    val haptics = rememberHaptics()
     val isCurrent = player.current?.id == track.id
     val playing = isCurrent && player.isPlaying
     Row(
-        Modifier.fillMaxWidth().clickable(onClick = onClick).padding(start = 16.dp, end = 4.dp, top = 6.dp, bottom = 6.dp)
+        Modifier.fillMaxWidth().combinedClickable(onClick = onClick, onLongClick = { Haptics.confirm(haptics); AppUi.openMenu(track, onRemove) }).padding(start = 16.dp, end = 4.dp, top = 6.dp, bottom = 6.dp)
             .semantics { contentDescription = "Track ${track.title} by ${track.artistNames}" }.testTag("track_row"),
         verticalAlignment = Alignment.CenterVertically,
     ) {
