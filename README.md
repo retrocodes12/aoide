@@ -1,6 +1,6 @@
 # Aoide
 
-Ἀοιδή, the muse of song. A native Android music player in the familiar shape of the big streaming apps, painted orange, on top of a public music service's catalogue: its search, albums, artists, playlists, moods and radio, with full-length songs.
+Ἀοιδή, the muse of song. A native Android music player in the familiar shape of the big streaming apps, on top of a public music service's catalogue: its search, albums, artists, playlists, moods and radio, with full-length songs.
 
 **Download:** the latest APK is on the [Releases](https://github.com/retrocodes12/aoide/releases) page. Android 8.0 or newer, no account, no sign-up. Once installed, Aoide updates itself in place from Settings. An older web preview of the design, on a different catalogue, still runs at https://retrocodes12.github.io/aoide/.
 
