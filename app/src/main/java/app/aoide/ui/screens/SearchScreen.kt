@@ -204,7 +204,7 @@ private fun Results(term: String, tab: Tab, setTab: (Tab) -> Unit, onNavigate: (
         if ((tab == Tab.ALL || tab == Tab.SONGS) && songs.isNotEmpty()) {
             item { SectionTitle("Songs") }
             val list = if (tab == Tab.SONGS) songs else songs.take(6)
-            items(list, key = { "t${it.id}" }) { t -> TrackRow(t, onClick = { PlayerController.playTracks(songs, songs.indexOf(t), PlayContext("search", "\"$term\"")) }) }
+            items(list, key = { "t${it.id}" }) { t -> TrackRow(t, onClick = { PlayerController.playRadio(t) }) }
         }
         if ((tab == Tab.ALL || tab == Tab.ARTISTS) && res.artists.isNotEmpty()) {
             item { SectionTitle("Artists") }
@@ -230,6 +230,7 @@ private fun Results(term: String, tab: Tab, setTab: (Tab) -> Unit, onNavigate: (
 
 @Composable
 private fun TopHit(hit: Hit, songs: List<Track>, term: String, onNavigate: (String) -> Unit) {
+    keep(songs, term)
     val (img, title, sub, round, route) = when (hit) {
         is Hit.ArtistHit -> Quint(Catalog.artistPicture(hit.artist.picture, 320), hit.artist.name, hit.artist.listeners?.let { "Artist · $it" } ?: "Artist", true, "artist/${hit.artist.id}")
         is Hit.AlbumHit -> Quint(Catalog.cover(hit.album.cover, 320), hit.album.title, "Album · ${hit.album.primaryArtist?.name ?: ""}", false, "album/${hit.album.id}")
@@ -238,10 +239,8 @@ private fun TopHit(hit: Hit, songs: List<Track>, term: String, onNavigate: (Stri
     }
     Row(
         Modifier.padding(horizontal = 16.dp).fillMaxWidth().clip(RoundedCornerShape(8.dp)).background(Aoide.elevated).clickable {
-            if (hit is Hit.TrackHit) {
-                val list = songs.ifEmpty { listOf(hit.track) }
-                PlayerController.playTracks(if (list.any { it.id == hit.track.id }) list else listOf(hit.track) + list, 0, PlayContext("search", "\"$term\""))
-            } else if (route.isNotEmpty()) onNavigate(route)
+            if (hit is Hit.TrackHit) PlayerController.playRadio(hit.track)
+            else if (route.isNotEmpty()) onNavigate(route)
         }.padding(16.dp).testTag("top_hit"),
         verticalAlignment = Alignment.CenterVertically,
     ) {
@@ -270,3 +269,6 @@ private fun ResultRow(image: String?, title: String, subtitle: String, round: Bo
 
 @Suppress("unused")
 private fun keep(m: Mood) = m
+
+@Suppress("unused_parameter")
+private fun keep(songs: List<Track>, term: String) = Unit

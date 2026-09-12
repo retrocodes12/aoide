@@ -6,7 +6,7 @@
 
 <p><img src="docs/home.png" width="180"> <img src="docs/album.png" width="180"> <img src="docs/now-playing.png" width="180"> <img src="docs/lyrics.png" width="180"></p>
 <p><img src="docs/artist.png" width="180"> <img src="docs/playlist.png" width="180"> <img src="docs/library.png" width="180"> <img src="docs/history.png" width="180"></p>
-<p><img src="docs/import.png" width="180"> <img src="docs/equalizer.png" width="180"> <img src="docs/lyrics-translated.png" width="180"> <img src="docs/downloads.png" width="180"></p>
+<p><img src="docs/import.png" width="180"> <img src="docs/equalizer.png" width="180"> <img src="docs/lyrics-translated.png" width="180"> <img src="docs/queue.png" width="180"></p>
 
 ## What it does
 
@@ -17,7 +17,7 @@
 - **HD mark and lossless.** Add a catalogue mirror backed by a subscribed account under Settings and Aoide finds each song on it by artist, title and length; songs it has wear a small HD mark, and play as FLAC when your quality is Lossless or Hi-Res. Without a mirror everything plays as Opus.
 - Album, artist and playlist pages whose heads take the record's colour. The ink on every tint is chosen by measured contrast, so a yellow record gets dark ink and a navy one gets light, and both clear WCAG AA.
 - Background playback through Media3: notification, lock screen and headset controls, audio focus, "becoming noisy" pause.
-- Queue: play next, add to queue, drag to reorder, remove, jump, clear (with a confirmation). Shuffle that restores the original order when turned off. Repeat one and all.
+- A queue screen built around the song playing: its artwork and title at the top, Shuffle, Repeat and Radio as three wide controls, then "Continue Playing" with the number of songs and how long they run. Rows carry artwork, artist and length, drag to reorder, and remove. Play next, add to queue, jump and clear all still work.
 - Synced lyrics from a community lyrics database; tap a line to seek. On a preview, lines past the clip are shown for reading and cannot be tapped.
 - A full-screen player with the artwork blurred behind everything, the cover shrinking on pause, a hairline seek bar, and a pull-down to dismiss.
 - Liked songs, saved albums, followed artists, your own playlists, recently played, recent searches. Everything stays on the phone; nothing leaves it.

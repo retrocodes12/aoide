@@ -221,6 +221,14 @@ class Shots {
         app.aoide.data.Updates.setStateForTest(app.aoide.data.Updates.State.Idle)
     }
 
+    @Test fun queueRadio() {
+        launch(); val (_, tracks) = album()
+        StreamResolver.setInfoForTest(StreamInfo(tracks[0].id, isPreview = false, quality = "OPUS 139 kbps", bitDepth = null, sampleRate = 48_000, source = "full"))
+        PlayerController.setStateForTest(PlayerUiState(queue = tracks, index = 0, status = Status.PLAYING, positionMs = 9_000, durationMs = 30_000, context = PlayContext("radio", "${tracks[0].title} Radio")))
+        AppUi.queueOpen = true; await { has("queue_screen") }; settle(1500); shot("33-queue-radio")
+        AppUi.queueOpen = false
+    }
+
     @Test fun trackMenu() {
         launch(); val (_, tracks) = album(); AppUi.openMenu(tracks[0]); await { has("track_menu") }; settle(1200); shot("18-track-menu")
         AppUi.menuTrack = null

@@ -53,6 +53,7 @@ import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.QueueMusic
 import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.Radio
 import androidx.compose.material.icons.filled.RemoveCircleOutline
 import androidx.compose.material.icons.filled.Repeat
 import androidx.compose.material.icons.filled.RepeatOne
@@ -352,13 +353,14 @@ private fun LyricsBody(l: Lyrics?, positionMs: Long, durationMs: Long, isPreview
     }
 }
 
-/** The queue, with long-press drag to reorder the upcoming songs. */
+/** The queue: the song playing, then everything lined up behind it, with long-press drag to reorder. */
 @Composable
 fun QueueScreen() {
     val s by PlayerController.state.collectAsState()
     BackHandler { AppUi.queueOpen = false }
     var dragging by remember { mutableStateOf<Int?>(null) }
     var dragOffset by remember { mutableStateOf(0f) }
+    val haptics = rememberHaptics()
     Column(Modifier.fillMaxSize().background(Aoide.ground).statusBarsPadding().navigationBarsPadding().testTag("queue_screen")) {
         Row(Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
             IconButton(onClick = { AppUi.queueOpen = false }, modifier = Modifier.semantics { contentDescription = "Close queue" }.testTag("queue_close")) { Icon(Icons.Filled.KeyboardArrowDown, null, tint = Aoide.fg) }
@@ -370,44 +372,90 @@ fun QueueScreen() {
             Box(Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.Center) { Text("Add songs with ··· on any row.", color = Aoide.subdued) }
             return@Column
         }
-        LazyColumn(Modifier.weight(1f)) {
-            item { Text("Now playing", style = MaterialTheme.typography.titleSmall, modifier = Modifier.padding(16.dp)) }
-            item { QueueRow(cur, current = true, onClick = { PlayerController.toggle() }) }
-            if (s.upcoming.isNotEmpty()) {
-                item {
-                    Row(Modifier.fillMaxWidth().padding(start = 16.dp, end = 8.dp, top = 12.dp), verticalAlignment = Alignment.CenterVertically) {
-                        Text(if (s.context != null) "Next from: ${s.context!!.title}" else "Next in queue", style = MaterialTheme.typography.titleSmall, modifier = Modifier.weight(1f), maxLines = 1, overflow = TextOverflow.Ellipsis)
-                        TextButton(onClick = { AppUi.ask("Clear the queue?", "Clear", "Everything after the current song is removed. The song playing now keeps playing.") { PlayerController.clearUpcoming() } }, modifier = Modifier.testTag("queue_clear")) { Text("Clear queue", color = Aoide.subdued) }
-                    }
+        // The song playing, as a header rather than a row: art, names, like, menu.
+        Row(Modifier.fillMaxWidth().padding(start = 16.dp, end = 8.dp, top = 6.dp, bottom = 10.dp), verticalAlignment = Alignment.CenterVertically) {
+            Artwork(Catalog.cover(cur.album?.cover, 160), Modifier.size(56.dp).clickable { AppUi.queueOpen = false }, RoundedCornerShape(6.dp))
+            Spacer(Modifier.width(14.dp))
+            Column(Modifier.weight(1f)) {
+                Text(cur.title, style = MaterialTheme.typography.titleMedium, color = Aoide.fg, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.testTag("queue_current"))
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    if (s.isPlaying) { Equaliser(); Spacer(Modifier.width(6.dp)) }
+                    Text(cur.artistNames, style = MaterialTheme.typography.bodyMedium, color = Aoide.subdued, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 }
-                itemsIndexed(s.upcoming, key = { i, t -> "${s.index + 1 + i}-${t.id}" }) { i, t ->
-                    val absolute = s.index + 1 + i
-                    QueueRow(
-                        t, current = false,
-                        onClick = { PlayerController.jumpTo(absolute) },
-                        onRemove = { PlayerController.removeAt(absolute) },
-                        dragHandle = Modifier.pointerInput(absolute) {
-                            detectVerticalDragGestures(
-                                onDragStart = { dragging = absolute; dragOffset = 0f },
-                                onDragEnd = {
-                                    val from = dragging
-                                    if (from != null) {
-                                        val steps = (dragOffset / 64.dp.toPx()).toInt()
-                                        val to = (from + steps).coerceIn(s.index + 1, s.queue.lastIndex)
-                                        if (to != from) PlayerController.move(from, to)
-                                    }
-                                    dragging = null
-                                },
-                                onDragCancel = { dragging = null },
-                            ) { _, dy -> dragOffset += dy }
-                        },
-                        lifted = dragging == absolute,
-                    )
-                }
-            } else {
-                item { Text("End of queue.", style = MaterialTheme.typography.bodyMedium, color = Aoide.subdued, modifier = Modifier.padding(16.dp)) }
+            }
+            LikeButton(cur, size = 24.dp)
+            IconButton(onClick = { AppUi.openMenu(cur) }, modifier = Modifier.semantics { contentDescription = "More options" }) { Icon(Icons.Filled.MoreVert, null, tint = Aoide.subdued) }
+        }
+        Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            QueuePill(Icons.Filled.Shuffle, "Shuffle", s.shuffle, Modifier.weight(1f).testTag("queue_shuffle")) { Haptics.tap(haptics); PlayerController.toggleShuffle() }
+            QueuePill(if (s.repeat == Player.REPEAT_MODE_ONE) Icons.Filled.RepeatOne else Icons.Filled.Repeat, if (s.repeat == Player.REPEAT_MODE_ONE) "Repeat one" else "Repeat", s.repeat != Player.REPEAT_MODE_OFF, Modifier.weight(1f).testTag("queue_repeat")) { Haptics.tap(haptics); PlayerController.cycleRepeat() }
+            QueuePill(Icons.Filled.Radio, "Radio", s.context?.kind == "radio", Modifier.weight(1f).testTag("queue_radio"), enabled = !cur.isLocal) { Haptics.tap(haptics); PlayerController.playRadio(cur) }
+        }
+        val upcoming = s.upcoming
+        Row(Modifier.fillMaxWidth().padding(start = 16.dp, end = 16.dp, top = 22.dp, bottom = 6.dp), verticalAlignment = Alignment.Bottom) {
+            Column(Modifier.weight(1f)) {
+                Text("Continue Playing", style = MaterialTheme.typography.titleLarge)
+                Text(
+                    when {
+                        upcoming.isEmpty() -> "Nothing lined up"
+                        s.context?.kind == "radio" -> "Songs like this one, from the service"
+                        s.context != null -> "Next from ${s.context!!.title}"
+                        else -> "Next in queue"
+                    },
+                    style = MaterialTheme.typography.bodySmall, color = Aoide.subdued, maxLines = 1, overflow = TextOverflow.Ellipsis,
+                )
+            }
+            if (upcoming.isNotEmpty()) Column(horizontalAlignment = Alignment.End) {
+                Text(app.aoide.ui.plural(upcoming.size, "song"), style = MaterialTheme.typography.bodySmall, color = Aoide.subdued)
+                Text(formatTime(upcoming.sumOf { it.duration }), style = MaterialTheme.typography.bodySmall, color = Aoide.subdued, modifier = Modifier.testTag("queue_length"))
             }
         }
+        LazyColumn(Modifier.weight(1f)) {
+            if (upcoming.isEmpty()) {
+                item { Text(if (cur.isLocal) "Local songs don't have a radio; add songs with ··· on any row." else "The radio builds itself as the song plays. Tap Radio to start one now.", style = MaterialTheme.typography.bodyMedium, color = Aoide.subdued, modifier = Modifier.padding(16.dp)) }
+            }
+            itemsIndexed(upcoming, key = { i, t -> "${s.index + 1 + i}-${t.id}" }) { i, t ->
+                val absolute = s.index + 1 + i
+                QueueRow(
+                    t, current = false,
+                    onClick = { PlayerController.jumpTo(absolute) },
+                    onRemove = { PlayerController.removeAt(absolute) },
+                    dragHandle = Modifier.pointerInput(absolute) {
+                        detectVerticalDragGestures(
+                            onDragStart = { dragging = absolute; dragOffset = 0f },
+                            onDragEnd = {
+                                val from = dragging
+                                if (from != null) {
+                                    val steps = (dragOffset / 64.dp.toPx()).toInt()
+                                    val to = (from + steps).coerceIn(s.index + 1, s.queue.lastIndex)
+                                    if (to != from) PlayerController.move(from, to)
+                                }
+                                dragging = null
+                            },
+                            onDragCancel = { dragging = null },
+                        ) { _, dy -> dragOffset += dy }
+                    },
+                    lifted = dragging == absolute,
+                )
+            }
+            if (upcoming.isNotEmpty()) item {
+                TextButton(onClick = { AppUi.ask("Clear the queue?", "Clear", "Everything after the current song is removed. The song playing now keeps playing.") { PlayerController.clearUpcoming() } }, modifier = Modifier.padding(horizontal = 8.dp).testTag("queue_clear")) { Text("Clear queue", color = Aoide.subdued) }
+            }
+            item { Spacer(Modifier.height(24.dp)) }
+        }
+    }
+}
+
+/** One of the three wide controls under the queue's header. */
+@Composable
+private fun QueuePill(icon: androidx.compose.ui.graphics.vector.ImageVector, label: String, active: Boolean, modifier: Modifier = Modifier, enabled: Boolean = true, onClick: () -> Unit) {
+    Row(
+        modifier.height(50.dp).clip(RoundedCornerShape(14.dp)).background(if (active) Aoide.accent.copy(alpha = .18f) else Aoide.elevated).clickable(enabled = enabled, onClick = onClick).semantics { contentDescription = label },
+        verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.Center,
+    ) {
+        Icon(icon, null, tint = if (!enabled) Aoide.muted else if (active) Aoide.accent else Aoide.subdued, modifier = Modifier.size(20.dp))
+        Spacer(Modifier.width(8.dp))
+        Text(label, style = MaterialTheme.typography.labelLarge, color = if (!enabled) Aoide.muted else if (active) Aoide.accent else Aoide.fg, maxLines = 1)
     }
 }
 
@@ -421,7 +469,7 @@ private fun QueueRow(t: Track, current: Boolean, onClick: () -> Unit, onRemove: 
             Text(t.title, style = MaterialTheme.typography.bodyLarge, color = if (current) Aoide.accent else Aoide.fg, maxLines = 1, overflow = TextOverflow.Ellipsis)
             Row(verticalAlignment = Alignment.CenterVertically) {
                 if (current && s.isPlaying) { Equaliser(); Spacer(Modifier.width(6.dp)) }
-                Text(t.artistNames, style = MaterialTheme.typography.bodyMedium, color = Aoide.subdued, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                Text(listOfNotNull(t.artistNames.takeIf { it.isNotBlank() }, t.duration.takeIf { it > 0 }?.let(::formatTime)).joinToString(" • "), style = MaterialTheme.typography.bodyMedium, color = Aoide.subdued, maxLines = 1, overflow = TextOverflow.Ellipsis)
             }
         }
         if (onRemove != null) IconButton(onClick = onRemove, modifier = Modifier.semantics { contentDescription = "Remove ${t.title} from queue" }.testTag("queue_remove")) { Icon(Icons.Filled.RemoveCircleOutline, null, tint = Aoide.subdued) }

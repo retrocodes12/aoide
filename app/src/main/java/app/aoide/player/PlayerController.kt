@@ -26,6 +26,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.encodeToString
 import java.io.File
@@ -406,12 +407,26 @@ object PlayerController {
 
     fun quality() = Prefs.quality.value
 
-    /** The service's own mix for a song: the song first, then songs like it. */
+    /**
+     * The song starts at once, alone; the service's own mix for it is fetched and queued behind it.
+     * What a tap on a search result or a lone card should do: the rest of the queue is music that
+     * belongs with the song, not the other things that matched the words.
+     */
     fun playRadio(t: Track) {
+        playTracks(listOf(t), 0, PlayContext("radio", "${t.title} Radio"))
+        if (t.isLocal) return
         scope.launch {
-            val list = runCatching { Catalog.radio(t.id) }.getOrDefault(emptyList()).ifEmpty { listOf(t) }
-            Toasts.show(if (list.size > 1) "Playing ${t.title} radio" else "Couldn't build a radio for this song")
-            playTracks(list, 0, PlayContext("radio", "${t.title} Radio"))
+            val mix = withContext(Dispatchers.IO) { runCatching { Catalog.radio(t.id) }.getOrDefault(emptyList()) }
+            val c = controller ?: return@launch
+            // The listener has moved on to something else meanwhile: leave their queue alone.
+            if (_state.value.current?.id != t.id || _state.value.context?.kind != "radio") return@launch
+            val have = (0 until c.mediaItemCount).map { c.getMediaItemAt(it).mediaId }.toSet()
+            val fresh = mix.filter { it.id !in have }.distinctBy { it.id }
+            if (fresh.isEmpty()) { Toasts.show("Couldn't build a radio for this song"); return@launch }
+            c.addMediaItems(fresh.map(::mediaItem))
+            unshuffled = null
+            sync()
+            saveSession(force = true)
         }
     }
 
