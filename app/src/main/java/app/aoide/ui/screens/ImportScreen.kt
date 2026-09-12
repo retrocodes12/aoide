@@ -40,7 +40,6 @@ import app.aoide.data.PlayContext
 import app.aoide.player.PlayerController
 import app.aoide.ui.Toasts
 import app.aoide.ui.components.AoideField
-import app.aoide.ui.components.OutlinePill
 import app.aoide.ui.components.PillButton
 import app.aoide.ui.components.SectionTitle
 import app.aoide.ui.components.TrackRow
@@ -48,6 +47,7 @@ import app.aoide.ui.plural
 import app.aoide.ui.theme.Aoide
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.launch
+import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.PlaylistAdd
 
 private sealed class Step {
@@ -96,18 +96,25 @@ fun ImportScreen(initialLink: String?, onBack: () -> Unit, onNavigate: (String) 
                 Spacer(Modifier.width(8.dp))
                 TextButton(onClick = { clipboard.getText()?.text?.let { link = it.trim() } }, modifier = Modifier.testTag("import_paste")) { Text("Paste", color = Aoide.accent) }
             }
-            Row(Modifier.padding(horizontal = 16.dp, vertical = 4.dp), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
-                PillButton("Import", Icons.Filled.PlaylistAdd, filled = true, enabled = kind != null && step !is Step.Reading && step !is Step.Matching, modifier = Modifier.testTag("import_go")) { run() }
-                Text(
-                    when {
-                        link.isBlank() -> ""
-                        kind == null -> "That doesn't look like a playlist link Aoide can read."
-                        kind.first == "list" -> "Playlist from the other streaming service"
-                        else -> "Playlist from the music service"
-                    },
-                    style = MaterialTheme.typography.bodySmall, color = if (kind == null && link.isNotBlank()) Aoide.accent else Aoide.subdued,
-                )
+            // What the link was taken to be, under the field it belongs to rather than beside the button.
+            val hint = when {
+                link.isBlank() -> ""
+                kind == null -> "That doesn't look like a playlist link Aoide can read."
+                kind.first == "list" -> "Playlist from the other streaming service"
+                else -> "Playlist from the music service"
             }
+            if (hint.isNotBlank()) Text(
+                hint,
+                style = MaterialTheme.typography.bodySmall,
+                color = if (kind == null) Aoide.accent else Aoide.subdued,
+                modifier = Modifier.padding(horizontal = 16.dp).padding(bottom = 4.dp).testTag("import_hint"),
+            )
+            // The action spans the field and its Paste button, so the block has one width and one edge.
+            PillButton(
+                "Import", Icons.Filled.PlaylistAdd, filled = true,
+                enabled = kind != null && step !is Step.Reading && step !is Step.Matching,
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp).testTag("import_go"),
+            ) { run() }
         }
         when (val s = step) {
             is Step.Idle -> Unit
@@ -125,13 +132,16 @@ fun ImportScreen(initialLink: String?, onBack: () -> Unit, onNavigate: (String) 
                     Column(Modifier.padding(horizontal = 16.dp, vertical = 8.dp)) {
                         Text(r.title, style = MaterialTheme.typography.titleLarge, maxLines = 2, overflow = TextOverflow.Ellipsis, modifier = Modifier.testTag("import_title"))
                         Text("${plural(r.matched.size, "song")} matched" + (if (r.missed.isNotEmpty()) ", ${r.missed.size} not in the catalogue" else ""), style = MaterialTheme.typography.bodySmall, color = Aoide.subdued)
-                        Row(Modifier.padding(top = 12.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                            PillButton("Save as playlist", Icons.Filled.PlaylistAdd, filled = true, enabled = r.matched.isNotEmpty(), modifier = Modifier.testTag("import_save")) {
+                        // The same pair the album and playlist heads use: two pills sharing the width.
+                        Row(Modifier.fillMaxWidth().padding(top = 12.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                            PillButton("Save playlist", Icons.Filled.PlaylistAdd, filled = true, enabled = r.matched.isNotEmpty(), modifier = Modifier.weight(1f).testTag("import_save")) {
                                 val p = Library.createPlaylist(r.title, r.matched, r.source)
                                 Toasts.show("Saved ${p.title}. Sync it any time from the playlist.")
                                 onNavigate("local/${p.id}")
                             }
-                            if (r.matched.isNotEmpty()) OutlinePill("Play") { PlayerController.playTracks(r.matched, 0, PlayContext("playlist", r.title)) }
+                            PillButton("Play", Icons.Filled.PlayArrow, filled = false, enabled = r.matched.isNotEmpty(), modifier = Modifier.weight(1f).testTag("import_play")) {
+                                PlayerController.playTracks(r.matched, 0, PlayContext("playlist", r.title))
+                            }
                         }
                     }
                 }
