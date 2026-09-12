@@ -19,7 +19,6 @@ import app.aoide.data.Catalog
 import app.aoide.data.Downloads
 import app.aoide.data.HiRate
 import app.aoide.data.LocalMedia
-import app.aoide.data.Lossless
 import app.aoide.data.Prefs
 import app.aoide.data.Quality
 import app.aoide.data.Track
@@ -82,21 +81,16 @@ object AoideMedia {
             return base.buildUpon().setUri(Uri.parse("file://" + d.file)).setMimeType(null).build()
         }
         hiRateUri(id)?.let { url ->
-            StreamResolver.note(StreamInfo(id, isPreview = false, quality = "AAC ${HiRate.KBPS} kbps", bitDepth = null, sampleRate = 44_100, source = "hirate"))
+            StreamResolver.note(StreamInfo(id, quality = "AAC ${HiRate.KBPS} kbps", sampleRate = 44_100, source = "hirate"))
             return base.buildUpon().setUri(Uri.parse(url)).setMimeType(null).build()
         }
         return base.buildUpon().setUri(Uri.parse("aoide://track/${item.mediaId}")).setMimeType(MimeTypes.APPLICATION_MPD).build()
     }
 
-    /**
-     * The second source's file for a song, unless something better applies: a lossless mirror that
-     * has the song beats it at the lossless tiers, and Low wants the smallest stream, not the biggest.
-     */
+    /** The second source's file for a song, unless Low is asked for: that wants the smallest stream, not the biggest. */
     fun hiRateUri(trackId: String): String? {
         if (!HiRate.enabled) return null
-        val q = effectiveQuality()
-        if (q == Quality.LOW) return null
-        if ((q == Quality.LOSSLESS || q == Quality.HI_RES_LOSSLESS) && Lossless.has(trackId)) return null
+        if (effectiveQuality() == Quality.LOW) return null
         return HiRate.url(trackId)
     }
 

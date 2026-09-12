@@ -46,7 +46,6 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import app.aoide.data.Catalog
 import app.aoide.data.Library
-import app.aoide.data.Lossless
 import app.aoide.data.PlayContext
 import app.aoide.data.Updates
 import app.aoide.player.PlayerController
@@ -233,9 +232,8 @@ fun HomeScreen(onNavigate: (String) -> Unit) {
         }
         item { Spacer(Modifier.height(24.dp)) }
         item {
-            val losslessOn by Lossless.enabled.collectAsState()
             Text(
-                "Catalogue and songs from the music service. " + (if (losslessOn) "Songs marked HD play as FLAC from your lossless mirror. " else "Add a lossless mirror in Settings for FLAC. ") + "Lyrics from a community database.",
+                "Catalogue and songs from the music service. Songs marked 320 come from a second source at a higher bitrate. Lyrics from a community database.",
                 style = MaterialTheme.typography.bodySmall, color = Aoide.subdued, modifier = Modifier.padding(16.dp).clickable { onNavigate("settings") }.testTag("source_note"),
             )
             Spacer(Modifier.height(140.dp))

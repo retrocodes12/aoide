@@ -132,7 +132,7 @@ object PlayerController {
     /** Media3's codes, in words a listener can act on. Never show the raw number. */
     private fun friendly(e: PlaybackException): String = when (e.errorCode) {
         PlaybackException.ERROR_CODE_IO_NETWORK_CONNECTION_FAILED, PlaybackException.ERROR_CODE_IO_NETWORK_CONNECTION_TIMEOUT -> "Network error while loading this song"
-        PlaybackException.ERROR_CODE_IO_BAD_HTTP_STATUS -> "The mirror refused this song"
+        PlaybackException.ERROR_CODE_IO_BAD_HTTP_STATUS -> "The source refused this song"
         PlaybackException.ERROR_CODE_DECODING_FAILED, PlaybackException.ERROR_CODE_DECODER_INIT_FAILED -> "This song's stream couldn't be decoded"
         PlaybackException.ERROR_CODE_PARSING_MANIFEST_MALFORMED, PlaybackException.ERROR_CODE_PARSING_CONTAINER_MALFORMED -> "This song's stream was unreadable"
         else -> "Couldn't play this song"

@@ -92,7 +92,6 @@ fun MiniPlayer(tint: Tint) {
                     when {
                         failed -> s.error ?: "Couldn't play this song"
                         s.status == Status.LOADING -> "Loading…"
-                        info?.isPreview == true -> "${t.artistNames} · Preview"
                         else -> t.artistNames
                     },
                     style = MaterialTheme.typography.bodySmall, color = if (failed) Color.White else Color.White.copy(alpha = .84f), maxLines = 1, overflow = TextOverflow.Ellipsis,

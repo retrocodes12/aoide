@@ -1,6 +1,6 @@
 # Aoide
 
-Ἀοιδή, the muse of song. A native Android music player in the familiar shape of the big streaming apps, painted orange, on top of a public music service's catalogue: its search, albums, artists, playlists, moods and radio, with full-length songs, and FLAC from a lossless mirror of your own when it has the song.
+Ἀοιδή, the muse of song. A native Android music player in the familiar shape of the big streaming apps, painted orange, on top of a public music service's catalogue: its search, albums, artists, playlists, moods and radio, with full-length songs.
 
 **Download:** the latest APK is on the [Releases](https://github.com/retrocodes12/aoide/releases) page. Android 8.0 or newer, no account, no sign-up. Once installed, Aoide updates itself in place from Settings. An older web preview of the design, on a different catalogue, still runs at https://retrocodes12.github.io/aoide/.
 
@@ -15,7 +15,6 @@
 - Search across songs, albums, artists and playlists, with a top result, filter chips, recent searches and the service's mood and genre grid.
 - Radio: the service's own mix for any song (from its menu) or artist (from the artist page), and autoplay continues the queue the same way, so what follows is related rather than random.
 - **Higher bitrate where it exists.** A second source is asked about every song; the ones it carries play as AAC 320 kbps instead of Opus and wear a small 320 mark. Its catalogue is deepest in Indian music and thin elsewhere, so the match is strict: the artist, the title and the length must all agree, or the song is left alone rather than replaced by a tribute act or a cover. It can be switched off in Settings.
-- **HD mark and lossless.** Add a catalogue mirror backed by a subscribed account under Settings and Aoide finds each song on it by artist, title and length; songs it has wear a small HD mark, and play as FLAC when your quality is Lossless or Hi-Res. Lossless outranks the 320 source, which outranks Opus.
 - Album, artist and playlist pages whose heads take the record's colour. The ink on every tint is chosen by measured contrast, so a yellow record gets dark ink and a navy one gets light, and both clear WCAG AA.
 - Background playback through Media3: notification, lock screen and headset controls, audio focus, "becoming noisy" pause.
 - A queue screen built around the song playing: its artwork and title at the top, Shuffle, Repeat and Radio as three wide controls, then "Continue Playing" with the number of songs and how long they run. Rows carry artwork, artist and length, drag to reorder, and remove. Play next, add to queue, jump and clear all still work.
@@ -24,7 +23,7 @@
 - Liked songs, saved albums, followed artists, your own playlists, recently played, recent searches. Everything stays on the phone; nothing leaves it.
 - The last queue comes back after a relaunch, paused where it was.
 - Plain-language playback errors with a retry. Three dead songs in a row stop the skipping instead of running the queue out.
-- Quality picker: Hi-Res Lossless and Lossless (from your mirror when it has the song), High and Low (Opus), with an honest read-back of what is actually playing.
+- Quality picker: High, which takes the best each source offers, and Low for thin connections. The player badge always says what is actually playing.
 - **Downloads.** Any song, album or playlist can be kept on the phone, fetched one at a time by a foreground service with a progress notification, and played with no connection at all through the same DASH path as everything else. A Downloads collection in Your Library lists what is kept, what is coming and what failed, with the total size and a remove-all.
 - **Your own music files.** "On this phone" reads the device's media store and plays what is already there, with the same rows, queue and player.
 - **Import playlists** by pasting a public playlist link: the service's own lists open directly; lists from the other big streaming service are read from their public embed page and each song is matched here by artist, title and length, with misses listed, never guessed. An imported playlist remembers its source and has a sync button that appends what is new.
@@ -47,9 +46,8 @@ Not built, on purpose: group listening, casting to other devices, music recognit
 Aoide reads a public music service's catalogue through the same private web API its own site uses, and plays each song from the best source that answers, in this order:
 
 1. **A file kept on the phone**, for anything downloaded.
-2. **A lossless mirror of your own**, when one has been seen serving songs in full and it has this recording. Aoide finds the song on the mirror by artist, title and length, marks it HD, and plays the mirror's FLAC when your quality is Lossless or Hi-Res. Public mirrors only serve 30-second previews, which Aoide ignores.
-3. **A second source**, for songs it carries, at AAC 320 kbps. Its search is open and needs no account, and the address of each song arrives encrypted with a fixed key its own web player uses. The files are plain MP4, so they play straight through rather than as a stream in pieces, and their addresses do not expire. Switched off, or where it does not have the song, playback falls to the next line.
-4. **The music service itself**, for the full song. Aoide asks the service's player API for the song's audio while identifying as one of the service's own client apps, and uses only streams handed out as plain links: no signature cipher, no anti-bot challenge, no JavaScript. The stream is Opus at up to about 160 kbps and the player's badge says so. Every stream's last bytes are read before it plays, because some clients' links stop at about a minute.
+2. **A second source**, for songs it carries, at AAC 320 kbps. Its search is open and needs no account, and the address of each song arrives encrypted with a fixed key its own web player uses. The files are plain MP4, so they play straight through rather than as a stream in pieces, and their addresses do not expire. Switched off, or where it does not have the song, playback falls to the next line.
+3. **The music service itself**, for the full song. Aoide asks the service's player API for the song's audio while identifying as one of the service's own client apps, and uses only streams handed out as plain links: no signature cipher, no anti-bot challenge, no JavaScript. The stream is Opus at up to about 160 kbps and the player's badge says so. Every stream's last bytes are read before it plays, because some clients' links stop at about a minute.
 
 Which client apps the service still serves whole files to changes without notice, so the list lives in the `config/` directory of this repository and the app refreshes it from here, which means a broken client can be swapped without a new APK. The service also rate-limits addresses it sees too much of; when that happens playback fails with a plain message rather than a silent skip.
 
@@ -88,4 +86,4 @@ The structure of a mainstream streaming app: three tabs, a capsule mini player, 
 
 ## Disclaimer
 
-Aoide is an independent project with no affiliation to, or endorsement from, the music service, any mirror, or the lyrics and translation services whose public interfaces it reads. It plays what those sources return. The music service's terms do not allow third-party apps to use it this way; respect the terms of the services you use. Album artwork and song titles shown in the screenshots belong to their rights holders and appear only as the app displays them.
+Aoide is an independent project with no affiliation to, or endorsement from, the music service, or the lyrics and translation services whose public interfaces it reads. It plays what those sources return. The music service's terms do not allow third-party apps to use it this way; respect the terms of the services you use. Album artwork and song titles shown in the screenshots belong to their rights holders and appear only as the app displays them.

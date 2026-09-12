@@ -186,7 +186,7 @@ fun WhitePill(text: String, onClick: () -> Unit) {
 
 /**
  * A failed load in words a listener can act on. A 404 says the thing is gone; anything else blames
- * the mirrors without quoting them. Raw transport messages never reach the screen.
+ * the sources without quoting them. Raw transport messages never reach the screen.
  */
 @Composable
 fun ErrorState(error: Throwable, what: String = "page", onHome: (() -> Unit)? = null, onRetry: () -> Unit) {
@@ -194,7 +194,7 @@ fun ErrorState(error: Throwable, what: String = "page", onHome: (() -> Unit)? = 
     if (missing) {
         EmptyState("We couldn't find that $what", "It may have been removed from the catalogue, or the link is wrong.", action = onHome?.let { { WhitePill("Home", it) } })
     } else {
-        EmptyState("Something went wrong", "The catalogue mirrors did not answer. Give it a moment and try again.", action = { WhitePill("Try again", onRetry) })
+        EmptyState("Something went wrong", "The catalogue did not answer. Give it a moment and try again.", action = { WhitePill("Try again", onRetry) })
     }
 }
 

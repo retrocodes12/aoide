@@ -2,7 +2,6 @@ package app.aoide
 
 import android.app.Application
 import app.aoide.data.Downloads
-import app.aoide.data.Instances
 import app.aoide.player.AudioEffects
 import app.aoide.ui.theme.Aoide
 import app.aoide.data.Library
@@ -15,7 +14,6 @@ class AoideApp : Application() {
     override fun onCreate() {
         super.onCreate()
         Prefs.init(this)
-        Instances.load()
         Library.init(this)
         Downloads.init(this)
         AudioEffects.load()

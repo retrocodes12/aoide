@@ -3,7 +3,7 @@ package app.aoide.data
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 
-/** One lenient JSON instance for everything: the catalogue's shapes drift, and so do the mirrors'. */
+/** One lenient JSON instance for everything: the catalogue's shapes drift between versions. */
 val json = Json {
     ignoreUnknownKeys = true
     isLenient = true
@@ -149,24 +149,9 @@ data class ArtistPage(
 /** A tile on the browse grid: a mood or a genre, with the colour the service gives it. */
 data class Mood(val title: String, val color: Long, val browseId: String, val params: String, val group: String)
 
-/** A mirror's answer for a song: the DASH manifest and what it says about itself. */
-@Serializable
-data class ManifestInfo(
-    val trackId: Long = 0,
-    val assetPresentation: String = "FULL",
-    val audioQuality: String = "",
-    val audioMode: String? = null,
-    val manifestMimeType: String = "",
-    val manifest: String = "",
-    val bitDepth: Int? = null,
-    val sampleRate: Int? = null,
-)
-
 enum class Quality(val label: String, val note: String) {
-    HI_RES_LOSSLESS("Hi-Res Lossless", "FLAC up to 24-bit / 192 kHz from your lossless mirror when it has the song; otherwise the best stream."),
-    LOSSLESS("Lossless", "FLAC 16-bit / 44.1 kHz from your lossless mirror when it has the song; otherwise the best stream. The default."),
-    HIGH("High", "AAC 320 kbps where the second source has the song, otherwise Opus at up to about 160 kbps."),
-    LOW("Low", "Opus at about 64 kbps for thin connections."),
+    HIGH("High", "The best stream each source offers: AAC 320 kbps where the second source has the song, otherwise Opus at up to about 160 kbps. The default."),
+    LOW("Low", "Opus at about 64 kbps, for thin connections."),
 }
 
 /** A playlist the user made on this phone. */

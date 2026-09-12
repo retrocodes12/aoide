@@ -156,7 +156,7 @@ class Inspector : BroadcastReceiver() {
         o.put("artist", cur?.artistNames)
         o.put("context", s.context?.title)
         o.put("error", s.error)
-        cur?.let { StreamResolver.infoFor(it.id) }?.let { o.put("preview", it.isPreview); o.put("quality", it.label); o.put("source", it.source) }
+        cur?.let { StreamResolver.infoFor(it.id) }?.let { o.put("quality", it.label); o.put("source", it.source) }
         o.put("upcoming", JSONArray(s.upcoming.map { it.title }))
         val txt = o.toString(1)
         File(context.filesDir, "state.json").writeText(txt)

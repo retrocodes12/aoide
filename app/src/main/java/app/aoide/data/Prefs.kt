@@ -8,7 +8,7 @@ import kotlinx.coroutines.flow.StateFlow
 /** Small settings. Anything bigger lives in Library (a JSON file). */
 object Prefs {
     private lateinit var sp: SharedPreferences
-    private val _quality = MutableStateFlow(Quality.LOSSLESS)
+    private val _quality = MutableStateFlow(Quality.HIGH)
     val quality: StateFlow<Quality> = _quality
     private val _previewNoted = MutableStateFlow(false)
     val previewNoted: StateFlow<Boolean> = _previewNoted
@@ -51,7 +51,7 @@ object Prefs {
 
     fun init(context: Context) {
         sp = context.getSharedPreferences("aoide", Context.MODE_PRIVATE)
-        _quality.value = runCatching { Quality.valueOf(sp.getString("quality", null) ?: "") }.getOrDefault(Quality.LOSSLESS)
+        _quality.value = runCatching { Quality.valueOf(sp.getString("quality", null) ?: "") }.getOrDefault(Quality.HIGH)
         _previewNoted.value = sp.getBoolean("preview_noted", false)
         switches.forEach { it.load() }
         _fadeMs.value = sp.getInt("fade_ms", 0)

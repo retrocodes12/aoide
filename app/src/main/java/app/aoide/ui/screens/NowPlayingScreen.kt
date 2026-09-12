@@ -176,13 +176,8 @@ fun NowPlayingScreen(tint: Tint, onNavigate: (String) -> Unit) {
                 Column(Modifier.weight(1f)) {
                     Text(t.title, style = MaterialTheme.typography.headlineSmall.copy(fontSize = 22.sp), color = Aoide.fg, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.testTag("np_title"))
                     Text(t.artistNames, style = MaterialTheme.typography.bodyLarge, color = Aoide.fg.copy(alpha = .78f), maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.clickable { t.primaryArtist?.let { AppUi.nowPlayingOpen = false; onNavigate("artist/${it.id}") } })
-                    val losslessKnown by app.aoide.data.Lossless.known.collectAsState()
-                    Row(Modifier.padding(top = 6.dp), verticalAlignment = Alignment.CenterVertically) {
-                        info?.label?.takeIf { it.isNotBlank() }?.let { label ->
-                            QualityBadge(if (info.isPreview) "Preview" else if (label.startsWith("FLAC 24")) "Hi-Res Lossless" else if (label.startsWith("FLAC")) "Lossless" else label, onDark = !info.isPreview, accent = info.isPreview)
-                            Spacer(Modifier.width(6.dp))
-                        }
-                        if (losslessKnown[t.id]?.isNotEmpty() == true && info?.lossless != true) app.aoide.ui.components.HdMark()
+                    info?.label?.takeIf { it.isNotBlank() }?.let { label ->
+                        Box(Modifier.padding(top = 6.dp)) { QualityBadge(label, onDark = true) }
                     }
                 }
                 LikeButton(t, size = 28.dp, tint = Aoide.fg.copy(alpha = .85f))
@@ -267,12 +262,10 @@ fun lyricLines(l: Lyrics?): List<String> {
 @Composable
 fun LyricsScreen(tint: Tint) {
     val s by PlayerController.state.collectAsState()
-    val infos by StreamResolver.infos.collectAsState()
     val t = s.current ?: return
     BackHandler { AppUi.lyricsOpen = false }
     val lyrics by rememberResource("lyrics", t.id) { Catalog.lyrics(t) }
     val listState = rememberLazyListState()
-    val isPreview = infos[t.id]?.isPreview == true
     Column(Modifier.fillMaxSize().background(tint.accent).statusBarsPadding().navigationBarsPadding().testTag("lyrics_screen")) {
         Row(Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
             Column(Modifier.weight(1f).padding(start = 8.dp)) {
@@ -286,7 +279,7 @@ fun LyricsScreen(tint: Tint) {
         when (val l = lyrics) {
             is Resource.Loading -> Box(Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.Center) { Text("Looking for lyrics…", style = MaterialTheme.typography.titleLarge, color = tint.ink) }
             is Resource.Failed -> Box(Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.Center) { Text("Lyrics unavailable", style = MaterialTheme.typography.titleLarge, color = tint.ink) }
-            is Resource.Ready -> LyricsBody(l.value, s.positionMs, s.durationMs, isPreview, tint, listState, Modifier.weight(1f))
+            is Resource.Ready -> LyricsBody(l.value, s.positionMs, tint, listState, Modifier.weight(1f))
         }
         Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
             val translatingFoot by Prefs.translateLyrics.value.collectAsState()
@@ -299,7 +292,7 @@ fun LyricsScreen(tint: Tint) {
 }
 
 @Composable
-private fun LyricsBody(l: Lyrics?, positionMs: Long, durationMs: Long, isPreview: Boolean, tint: Tint, listState: LazyListState, modifier: Modifier) {
+private fun LyricsBody(l: Lyrics?, positionMs: Long, tint: Tint, listState: LazyListState, modifier: Modifier) {
     val synced = l?.synced?.takeIf { it.isNotEmpty() }
     val plain = l?.plain?.takeIf { it.isNotBlank() }
     if (synced == null && plain == null) {
@@ -314,33 +307,24 @@ private fun LyricsBody(l: Lyrics?, positionMs: Long, durationMs: Long, isPreview
     val sourceLines = synced?.map { it.line } ?: plain!!.lines()
     val translated by rememberResource("translate", translating, lang, sourceLines) { if (translating) Translate.lines(sourceLines, lang) else emptyList() }
     val tr: List<String> = (translated as? Resource.Ready)?.value?.takeIf { it.size == sourceLines.size } ?: emptyList()
-    // On a 30-second preview the lyrics still cover the whole song; lines past the clip cannot be reached.
-    val reachable: (Double) -> Boolean = { t -> !isPreview || durationMs <= 0 || t < durationMs / 1000.0 - 0.5 }
     LaunchedEffect(active) { if (active >= 0) listState.animateScrollToItem((active - 2).coerceAtLeast(0)) }
     LazyColumn(modifier.fillMaxWidth(), state = listState, contentPadding = PaddingValues(horizontal = 20.dp, vertical = 24.dp)) {
         if (synced != null) {
             itemsIndexed(synced) { i, line ->
-                val ok = reachable(line.t)
                 val color = when {
-                    !ok -> tint.faint
                     i == active -> tint.ink
                     i < active -> tint.faint
                     else -> tint.soft
                 }
                 val scale by animateFloatAsState(if (i == active) 1.04f else 1f, label = "line")
-                Column(Modifier.fillMaxWidth().scale(scale).clickable(enabled = ok) { PlayerController.seekTo((line.t * 1000).toLong()) }.padding(vertical = 6.dp).semantics { contentDescription = if (ok) "Lyric line" else "Lyric line, past the preview" }.testTag("lyric_line")) {
+                Column(Modifier.fillMaxWidth().scale(scale).clickable { PlayerController.seekTo((line.t * 1000).toLong()) }.padding(vertical = 6.dp).semantics { contentDescription = "Lyric line" }.testTag("lyric_line")) {
                     Text(
                         line.line.ifBlank { "♪" },
-                        style = MaterialTheme.typography.headlineMedium.copy(fontWeight = if (ok) FontWeight.ExtraBold else FontWeight.SemiBold, fontSize = size.sp, lineHeight = (size + 8).sp),
+                        style = MaterialTheme.typography.headlineMedium.copy(fontWeight = FontWeight.ExtraBold, fontSize = size.sp, lineHeight = (size + 8).sp),
                         color = color,
                     )
                     val t = tr.getOrNull(i)
                     if (t != null && t.isNotBlank() && t != line.line) Text(t, style = MaterialTheme.typography.bodyLarge.copy(fontSize = (size * 0.6f).sp, lineHeight = (size * 0.8f).sp), color = if (i == active) tint.soft else tint.faint, modifier = Modifier.padding(top = 2.dp).testTag("lyric_translation"))
-                }
-            }
-            if (isPreview && synced.any { !reachable(it.t) }) {
-                itemsIndexed(listOf("Only the first 30 seconds play on this mirror; the rest of the lyrics are shown for reading.")) { _, note ->
-                    Text(note, style = MaterialTheme.typography.bodySmall.copy(fontWeight = FontWeight.SemiBold), color = tint.soft, modifier = Modifier.padding(top = 18.dp))
                 }
             }
         } else {

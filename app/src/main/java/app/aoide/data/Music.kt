@@ -242,7 +242,7 @@ object Music {
 
     /**
      * A one-file DASH manifest for [s]: the playback service treats every song as DASH, so a stream
-     * rides the same path as a mirror's manifest. The init and index byte ranges let ExoPlayer
+     * rides the same path as everything else. The init and index byte ranges let ExoPlayer
      * seek without downloading the file first.
      */
     fun dashManifest(s: AudioStream): String {
@@ -305,6 +305,9 @@ object Music {
             return json.parseToJsonElement(res.body?.string() ?: "{}") as? JsonObject ?: JsonObject(emptyMap())
         }
     }
+
+    /** Forget every memoised page. */
+    fun clearCache() = synchronized(cache) { cache.clear() }
 
     /** Test seam: forget benches and memoised pages so a test starts clean. */
     fun resetForTest() {

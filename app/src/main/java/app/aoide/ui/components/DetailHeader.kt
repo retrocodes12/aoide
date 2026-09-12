@@ -114,7 +114,7 @@ fun PillButton(text: String, icon: androidx.compose.ui.graphics.vector.ImageVect
     }
 }
 
-/** "Lossless" / "Hi-Res" tag, in the shape Apple Music uses. [onDark] gives it its own ground for tinted surfaces. */
+/** The small tag that says what a song is playing as. [onDark] gives it its own ground for tinted surfaces. */
 @Composable
 fun QualityBadge(text: String, modifier: Modifier = Modifier, onDark: Boolean = false, accent: Boolean = false) {
     val bg = when {

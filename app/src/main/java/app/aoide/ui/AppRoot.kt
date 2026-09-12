@@ -54,7 +54,6 @@ import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
-import app.aoide.data.Instances
 import app.aoide.data.Prefs
 import app.aoide.data.Updates
 import app.aoide.player.PlayerController
@@ -100,8 +99,7 @@ fun AppRoot() {
     val navigate: (String) -> Unit = { r -> nav.navigate(r) { launchSingleTop = true } }
 
     LaunchedEffect(Unit) {
-        Instances.probe()
-        // A moment after the mirrors are probed, so the first screen's requests go first.
+        // A moment after launch, so the first screen's own requests go first.
         delay(2500)
         if (Updates.autoCheck) Updates.check()
     }

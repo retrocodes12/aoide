@@ -112,9 +112,7 @@ class Shots {
     private fun album(): Pair<app.aoide.data.Album, List<Track>> = runBlocking { Catalog.album(ALBUM).let { it.album to it.tracks } }
 
     private fun playing(tracks: List<Track>, title: String, status: Status = Status.PLAYING) {
-        StreamResolver.setInfoForTest(StreamInfo(tracks[0].id, isPreview = false, quality = "OPUS 139 kbps", bitDepth = null, sampleRate = 48_000, source = "full"))
-        app.aoide.data.Lossless.setKnownForTest(tracks[0].id, "1")
-        if (tracks.size > 2) app.aoide.data.Lossless.setKnownForTest(tracks[2].id, "2")
+        StreamResolver.setInfoForTest(StreamInfo(tracks[0].id, quality = "OPUS 139 kbps", sampleRate = 48_000, source = "full"))
         if (tracks.size > 1) app.aoide.data.HiRate.setKnownForTest(tracks[1].id, "https://example.invalid/x_320.mp4")
         if (tracks.size > 3) app.aoide.data.HiRate.setKnownForTest(tracks[3].id, "https://example.invalid/y_320.mp4")
         PlayerController.setStateForTest(PlayerUiState(queue = tracks, index = 0, status = status, positionMs = 9_000, durationMs = 30_000, context = PlayContext("album", title, "album/$ALBUM")))
@@ -153,7 +151,7 @@ class Shots {
         navigate("liked"); await { has("track_row") }; settle(1500); shot("08-liked")
     }
 
-    @Test fun settings() { launch(); navigate("settings"); await { has("instance_row") }; settle(2500); shot("09-settings") }
+    @Test fun settings() { launch(); navigate("settings"); await { has("quality_HIGH") }; settle(2500); shot("09-settings") }
 
     @Test fun nowPlaying() {
         launch(); val (a, tracks) = album(); playing(tracks, a.title)
@@ -225,7 +223,7 @@ class Shots {
 
     @Test fun queueRadio() {
         launch(); val (_, tracks) = album()
-        StreamResolver.setInfoForTest(StreamInfo(tracks[0].id, isPreview = false, quality = "OPUS 139 kbps", bitDepth = null, sampleRate = 48_000, source = "full"))
+        StreamResolver.setInfoForTest(StreamInfo(tracks[0].id, quality = "OPUS 139 kbps", sampleRate = 48_000, source = "full"))
         PlayerController.setStateForTest(PlayerUiState(queue = tracks, index = 0, status = Status.PLAYING, positionMs = 9_000, durationMs = 30_000, context = PlayContext("radio", "${tracks[0].title} Radio")))
         AppUi.queueOpen = true; await { has("queue_screen") }; settle(1500); shot("33-queue-radio")
         AppUi.queueOpen = false
