@@ -16,7 +16,10 @@ import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
 import androidx.media3.exoplayer.source.MediaSource
 import app.aoide.data.ApiClient
 import app.aoide.data.Catalog
+import app.aoide.data.Downloads
+import app.aoide.data.HiRate
 import app.aoide.data.LocalMedia
+import app.aoide.data.Lossless
 import app.aoide.data.Prefs
 import app.aoide.data.Quality
 import app.aoide.data.Track
@@ -28,10 +31,15 @@ import kotlinx.serialization.encodeToString
 /**
  * The media pipeline, shared by the playback service and the tests so both run the same code.
  *
- * Queue items are `aoide://track/{id}` DASH items. The resolver turns each into a real manifest on
- * ExoPlayer's loader thread the moment the song is reached, and stamps every request with a user
- * agent: the service's CDN gets the one its stream was issued to, everything else gets Aoide's own.
- * Songs from the phone's own storage (`local:` ids) play straight from their content URI.
+ * Most queue items are `aoide://track/{id}` DASH items. The resolver turns each into a real
+ * manifest on ExoPlayer's loader thread the moment the song is reached, and stamps every request
+ * with a user agent: the service's CDN gets the one its stream was issued to, everything else gets
+ * Aoide's own.
+ *
+ * Three kinds of song skip all of that and play straight from a plain file, because that is what
+ * they are: music already on the phone, a song kept as a plain download, and a song the second
+ * source carries at a higher bitrate. ExoPlayer has to be told which kind an item is when the item
+ * is built, not when it is reached, so each of those is decided here and needs no resolving later.
  */
 @UnstableApi
 object AoideMedia {
@@ -69,7 +77,27 @@ object AoideMedia {
         // A browser (Android Auto) sends a bare id: rebuild the whole item from the track the library handed out.
         val base = if (fromExtras == null) TrackRegistry.get(id)?.let(::mediaItemFor) ?: item else item
         if (LocalMedia.isLocal(id)) return base.buildUpon().setUri(Uri.parse(LocalMedia.uriFor(id))).setMimeType(null).build()
+        Downloads.get(id)?.takeIf { it.progressive }?.let { d ->
+            StreamResolver.note(StreamResolver.downloadInfo(d))
+            return base.buildUpon().setUri(Uri.parse("file://" + d.file)).setMimeType(null).build()
+        }
+        hiRateUri(id)?.let { url ->
+            StreamResolver.note(StreamInfo(id, isPreview = false, quality = "AAC ${HiRate.KBPS} kbps", bitDepth = null, sampleRate = 44_100, source = "hirate"))
+            return base.buildUpon().setUri(Uri.parse(url)).setMimeType(null).build()
+        }
         return base.buildUpon().setUri(Uri.parse("aoide://track/${item.mediaId}")).setMimeType(MimeTypes.APPLICATION_MPD).build()
+    }
+
+    /**
+     * The second source's file for a song, unless something better applies: a lossless mirror that
+     * has the song beats it at the lossless tiers, and Low wants the smallest stream, not the biggest.
+     */
+    fun hiRateUri(trackId: String): String? {
+        if (!HiRate.enabled) return null
+        val q = effectiveQuality()
+        if (q == Quality.LOW) return null
+        if ((q == Quality.LOSSLESS || q == Quality.HI_RES_LOSSLESS) && Lossless.has(trackId)) return null
+        return HiRate.url(trackId)
     }
 
     /** Data saver drops to the smallest stream on a metered connection. */

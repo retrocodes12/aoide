@@ -32,6 +32,8 @@ data class Download(
     val sampleRate: Int,
     val channels: Int,
     val savedAt: Long,
+    /** A plain MP4 that plays straight from the file, rather than a DASH-wrapped stream. */
+    val progressive: Boolean = false,
 ) {
     val label: String get() = "${if (codecs.startsWith("opus")) "OPUS" else "AAC"} ${bitrate / 1000} kbps"
 }
@@ -122,6 +124,11 @@ object Downloads {
 
     private suspend fun fetch(t: Track) {
         _current.value = DownloadProgress(t, 0f)
+        // The second source's 320 kbps file, when it has the song and the listener wants it.
+        if (HiRate.enabled && Prefs.quality.value != Quality.LOW) {
+            val hi = HiRate.url(t.id) ?: runCatching { HiRate.lookup(t) }.getOrNull()
+            if (hi != null) return fetchProgressive(t, hi)
+        }
         val s = Music.stream(t.id, Prefs.quality.value) ?: throw IllegalStateException("The music service did not hand out a whole file")
         val ext = if (s.mimeType.contains("webm")) "webm" else "m4a"
         val out = File(dir, "${t.id}.$ext")
@@ -152,6 +159,37 @@ object Downloads {
         if (out.exists()) out.delete()
         tmp.renameTo(out)
         val d = Download(t, out.absolutePath, out.length(), s.mimeType, s.codecs, s.averageBitrate, s.durationMs, s.initRange.first, s.initRange.last, s.indexRange.first, s.indexRange.last, s.sampleRate, s.channels, System.currentTimeMillis())
+        _all.value = _all.value + (t.id to d)
+        persist()
+    }
+
+    /** A plain file, read straight through; nothing about it needs a manifest. */
+    private suspend fun fetchProgressive(t: Track, url: String) {
+        val out = File(dir, "${t.id}.m4a")
+        val tmp = File(dir, "${t.id}.part")
+        var total = 0L
+        ApiClient.http.newCall(Request.Builder().url(url).header("User-Agent", ApiClient.UA).build()).execute().use { res ->
+            if (!res.isSuccessful) throw ApiException(res.code, "The second source answered ${res.code}")
+            val body = res.body ?: throw IllegalStateException("empty stream")
+            total = body.contentLength()
+            body.byteStream().use { input ->
+                tmp.outputStream().use { o ->
+                    val buf = ByteArray(64 * 1024)
+                    var done = 0L
+                    while (true) {
+                        val n = input.read(buf)
+                        if (n < 0) break
+                        o.write(buf, 0, n)
+                        done += n
+                        if (total > 0) _current.value = DownloadProgress(t, (done.toFloat() / total).coerceIn(0f, 1f))
+                    }
+                }
+            }
+        }
+        if (tmp.length() <= 0L) { tmp.delete(); throw IllegalStateException("The file came back empty") }
+        if (out.exists()) out.delete()
+        tmp.renameTo(out)
+        val d = Download(t, out.absolutePath, out.length(), "audio/mp4", "mp4a.40.2", HiRate.KBPS * 1000, t.duration * 1000L, 0L, 0L, 0L, 0L, 44_100, 2, System.currentTimeMillis(), progressive = true)
         _all.value = _all.value + (t.id to d)
         persist()
     }

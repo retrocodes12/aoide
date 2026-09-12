@@ -28,7 +28,9 @@ object Prefs {
     val autoplay = Switch("autoplay", true)
     val pureBlack = Switch("pure_black", false)
     val translateLyrics = Switch("translate_lyrics", false)
-    val switches = listOf(dataSaver, skipSilence, pauseOnMute, resumeOnBluetooth, autoplay, pureBlack, translateLyrics)
+    /** Use the second source's 320 kbps AAC for songs it carries. */
+    val hiRate = Switch("hi_rate", true)
+    val switches = listOf(dataSaver, skipSilence, pauseOnMute, resumeOnBluetooth, autoplay, pureBlack, translateLyrics, hiRate)
 
     private val _fadeMs = MutableStateFlow(0)
     /** Fade between songs, in ms; 0 is off. */

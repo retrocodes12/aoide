@@ -71,7 +71,9 @@ internal fun PlaybackSettings() {
     val mute by Prefs.pauseOnMute.value.collectAsState()
     val bt by Prefs.resumeOnBluetooth.value.collectAsState()
     val auto by Prefs.autoplay.value.collectAsState()
+    val hiRate by Prefs.hiRate.value.collectAsState()
     Section("Playback", "How songs start, end and follow one another.")
+    ToggleRow("Higher bitrate when available", if (hiRate) "On. A second source is asked for each song; the ones it carries play as AAC 320 kbps instead of Opus and wear a 320 mark. Its catalogue is deepest in Indian music." else "Off. Songs play as Opus from the music service.", hiRate, "hirate_toggle") { Prefs.hiRate.set(it); PlayerController.reloadCurrent() }
     ToggleRow("Data saver", if (dataSaver) "On. Mobile data gets the smallest stream; Wi-Fi keeps your quality." else "Off. Every connection gets the quality above.", dataSaver, "data_saver_toggle") { Prefs.dataSaver.set(it); PlayerController.reloadCurrent() }
     ChoiceRow("Fade between songs", if (fade == 0) "Off. Songs cut straight from one to the next." else "The end of a song fades out and the next fades in over ${fade / 1000} s. Play and pause fade too.", listOf(0, 1000, 2000, 3000, 5000), fade, { if (it == 0) "Off" else "${it / 1000} s" }, "fade_choice") { Prefs.setFadeMs(it) }
     ChoiceRow("Speed", if (speed == 1f) "Normal speed." else "Songs play at ${speed}× with the pitch kept.", listOf(0.75f, 1f, 1.25f, 1.5f, 2f), speed, { "${it}×" }, "speed_choice") { Prefs.setSpeed(it) }

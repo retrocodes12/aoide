@@ -115,6 +115,8 @@ class Shots {
         StreamResolver.setInfoForTest(StreamInfo(tracks[0].id, isPreview = false, quality = "OPUS 139 kbps", bitDepth = null, sampleRate = 48_000, source = "full"))
         app.aoide.data.Lossless.setKnownForTest(tracks[0].id, "1")
         if (tracks.size > 2) app.aoide.data.Lossless.setKnownForTest(tracks[2].id, "2")
+        if (tracks.size > 1) app.aoide.data.HiRate.setKnownForTest(tracks[1].id, "https://example.invalid/x_320.mp4")
+        if (tracks.size > 3) app.aoide.data.HiRate.setKnownForTest(tracks[3].id, "https://example.invalid/y_320.mp4")
         PlayerController.setStateForTest(PlayerUiState(queue = tracks, index = 0, status = status, positionMs = 9_000, durationMs = 30_000, context = PlayContext("album", title, "album/$ALBUM")))
     }
 

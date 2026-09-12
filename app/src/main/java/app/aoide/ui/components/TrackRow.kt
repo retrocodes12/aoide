@@ -40,7 +40,9 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import app.aoide.data.Catalog
 import app.aoide.data.Downloads
+import app.aoide.data.HiRate
 import app.aoide.data.Lossless
+import app.aoide.data.Prefs
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.foundation.border
 import androidx.compose.material.icons.filled.ArrowCircleDown
@@ -74,6 +76,11 @@ fun TrackRow(
     val lossless by Lossless.known.collectAsState()
     if (losslessOn) LaunchedEffect(track.id) { Lossless.request(track) }
     val hd = lossless[track.id]?.isNotEmpty() == true
+    val hiRateOn by Prefs.hiRate.value.collectAsState()
+    val hiKnown by HiRate.known.collectAsState()
+    if (hiRateOn) LaunchedEffect(track.id) { HiRate.request(track) }
+    // One mark, not two: lossless already says more than the bitrate does.
+    val hi320 = !hd && hiKnown[track.id]?.isNotEmpty() == true
     Row(
         Modifier.fillMaxWidth().combinedClickable(onClick = onClick, onLongClick = { Haptics.confirm(haptics); AppUi.openMenu(track, onRemove) }).padding(start = 16.dp, end = 4.dp, top = 6.dp, bottom = 6.dp)
             .semantics { contentDescription = "Track ${track.title} by ${track.artistNames}" }.testTag("track_row"),
@@ -97,11 +104,12 @@ fun TrackRow(
                 overflow = TextOverflow.Ellipsis,
             )
             val sub = subtitle ?: track.artistNames
-            if (sub.isNotBlank() || track.explicit || kept || hd || (number == null && playing)) Row(verticalAlignment = Alignment.CenterVertically) {
+            if (sub.isNotBlank() || track.explicit || kept || hd || hi320 || (number == null && playing)) Row(verticalAlignment = Alignment.CenterVertically) {
                 if (number == null && playing) {
                     Equaliser(); Spacer(Modifier.width(6.dp))
                 }
                 if (hd) { HdMark(); Spacer(Modifier.width(6.dp)) }
+                if (hi320) { RateMark(); Spacer(Modifier.width(6.dp)) }
                 if (kept) {
                     Icon(Icons.Filled.ArrowCircleDown, "Downloaded", tint = Aoide.accent, modifier = Modifier.size(14.dp).testTag("downloaded_mark")); Spacer(Modifier.width(5.dp))
                 }
@@ -126,6 +134,14 @@ fun TrackRow(
 fun HdMark(modifier: Modifier = Modifier) {
     Box(modifier.border(1.dp, Aoide.accent, RoundedCornerShape(3.dp)).padding(horizontal = 3.dp, vertical = 0.dp).testTag("hd_mark")) {
         Text("HD", style = MaterialTheme.typography.labelSmall.copy(letterSpacing = 0.sp, fontSize = 9.sp, lineHeight = 12.sp), color = Aoide.accent)
+    }
+}
+
+/** The mark on a song the second source carries at a higher bitrate than the first. */
+@Composable
+fun RateMark(modifier: Modifier = Modifier) {
+    Box(modifier.border(1.dp, Aoide.subdued, RoundedCornerShape(3.dp)).padding(horizontal = 3.dp, vertical = 0.dp).testTag("rate_mark")) {
+        Text("320", style = MaterialTheme.typography.labelSmall.copy(letterSpacing = 0.sp, fontSize = 9.sp, lineHeight = 12.sp), color = Aoide.subdued)
     }
 }
 

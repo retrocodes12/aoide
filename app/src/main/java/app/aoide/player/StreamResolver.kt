@@ -31,7 +31,7 @@ data class StreamInfo(
     val label: String
         get() = when {
             isPreview -> "PREVIEW"
-            source == "full" || source == "download" -> quality
+            source == "full" || source == "download" || source == "hirate" -> quality
             bitDepth != null && sampleRate != null -> "FLAC $bitDepth/${sampleRate / 1000}"
             quality.contains("LOSSLESS") -> "FLAC"
             quality.isNotBlank() -> quality
@@ -96,9 +96,13 @@ object StreamResolver {
     }
 
     private fun fromDownload(d: Download): Resolved {
-        val info = StreamInfo(d.track.id, isPreview = false, quality = "Downloaded · ${d.label}", bitDepth = null, sampleRate = d.sampleRate, source = "download")
+        val info = downloadInfo(d)
+        // A plain MP4 has no manifest to build; it is played straight from the file.
+        if (d.progressive) return Resolved(Uri.parse("file://" + d.file), info)
         return Resolved(Uri.parse("data:application/dash+xml;base64," + Base64.encodeToString(Downloads.manifest(d).toByteArray(), Base64.NO_WRAP)), info)
     }
+
+    fun downloadInfo(d: Download) = StreamInfo(d.track.id, isPreview = false, quality = "Downloaded · ${d.label}", bitDepth = null, sampleRate = d.sampleRate, source = "download")
 
     private suspend fun fromService(trackId: String, quality: Quality): Resolved? {
         val s = Music.stream(trackId, quality) ?: return null
@@ -129,6 +133,9 @@ object StreamResolver {
     }
 
     fun forget(trackId: String) = synchronized(cache) { cache.keys.removeAll { it.startsWith("$trackId:") } }
+
+    /** Record what a song is playing as, for paths that never reach the resolver (a kept file, the second source). */
+    fun note(info: StreamInfo) { _infos.value = _infos.value + (info.trackId to info) }
 
     /** Test seam: lets a screenshot test show a stream badge without resolving a stream. */
     fun setInfoForTest(info: StreamInfo) { _infos.value = _infos.value + (info.trackId to info) }

@@ -9,6 +9,7 @@ import androidx.media3.common.Player
 import androidx.media3.session.MediaController
 import androidx.media3.session.SessionToken
 import app.aoide.data.Catalog
+import app.aoide.data.HiRate
 import app.aoide.data.Library
 import app.aoide.data.PlayContext
 import app.aoide.data.Prefs
@@ -70,6 +71,8 @@ object PlayerController {
     private var sessionFile: File? = null
     private var lastSave = 0L
     private var lastTintId = ""
+    /** Songs already swapped to the second source, so a queue is not rebuilt over and over. */
+    private val upgraded = HashSet<String>()
     private var tick = 0
 
     private var appContext: Context? = null
@@ -87,6 +90,8 @@ object PlayerController {
             c.addListener(listener)
             _state.value = _state.value.copy(shuffle = pendingShuffle)
             if (c.mediaItemCount == 0) restoreSession(c)
+            // A lookup that lands after the queue was built upgrades the songs still to come.
+            scope.launch { HiRate.known.collect { upgradeQueue() } }
             sync()
         }, ContextCompat.getMainExecutor(appContext))
     }
@@ -237,6 +242,9 @@ object PlayerController {
         }
         context = ctx
         failStreak = 0
+        upgraded.clear()
+        // Ask the second source about this queue; anything it carries is swapped in as the answers arrive.
+        HiRate.requestAll(listOf(list[index]) + list)
         _state.value = _state.value.copy(error = null, status = Status.LOADING, durationMs = 0)
         c.setMediaItems(list.map(::mediaItem), index, 0)
         c.prepare()
@@ -406,6 +414,22 @@ object PlayerController {
     }
 
     fun quality() = Prefs.quality.value
+
+    /**
+     * Swap in the second source's file for songs it turned out to carry. Only songs after the one
+     * playing are touched, so nothing interrupts what is being heard.
+     */
+    private fun upgradeQueue() {
+        val c = controller ?: return
+        val from = (c.currentMediaItemIndex + 1).coerceAtLeast(0)
+        for (i in from until c.mediaItemCount) {
+            val id = c.getMediaItemAt(i).mediaId
+            if (id in upgraded || AoideMedia.hiRateUri(id) == null) continue
+            val t = TrackRegistry.get(id) ?: continue
+            upgraded.add(id)
+            runCatching { c.replaceMediaItem(i, mediaItem(t)) }
+        }
+    }
 
     /**
      * The song starts at once, alone; the service's own mix for it is fetched and queued behind it.

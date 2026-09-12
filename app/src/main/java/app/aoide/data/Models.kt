@@ -165,7 +165,7 @@ data class ManifestInfo(
 enum class Quality(val label: String, val note: String) {
     HI_RES_LOSSLESS("Hi-Res Lossless", "FLAC up to 24-bit / 192 kHz from your lossless mirror when it has the song; otherwise the best stream."),
     LOSSLESS("Lossless", "FLAC 16-bit / 44.1 kHz from your lossless mirror when it has the song; otherwise the best stream. The default."),
-    HIGH("High", "Opus at up to about 160 kbps."),
+    HIGH("High", "AAC 320 kbps where the second source has the song, otherwise Opus at up to about 160 kbps."),
     LOW("Low", "Opus at about 64 kbps for thin connections."),
 }
 
