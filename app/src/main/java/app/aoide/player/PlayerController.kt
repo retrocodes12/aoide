@@ -219,6 +219,9 @@ object PlayerController {
         context = s.context
         pendingShuffle = s.shuffle
         val latest = Prefs.getLong("pos:${s.queue[s.index].id}").takeIf { it >= 0 } ?: s.positionMs
+        upgraded.clear()
+        // Answers kept from earlier are read as the items are built; the songs coming up are asked about now.
+        HiRate.requestAll(s.queue.subList(s.index, minOf(s.index + 12, s.queue.size)))
         c.setMediaItems(s.queue.map(::mediaItem), s.index, maxOf(s.positionMs, latest))
         c.repeatMode = s.repeat
         c.playWhenReady = false
@@ -243,14 +246,28 @@ object PlayerController {
         context = ctx
         failStreak = 0
         upgraded.clear()
-        // Ask the second source about this queue; anything it carries is swapped in as the answers arrive.
-        HiRate.requestAll(listOf(list[index]) + list)
+        val first = list[index]
+        // Ask the second source about the whole queue, the first song first; anything it carries is swapped in as answers land.
+        HiRate.requestAll(listOf(first) + list)
+        val finalList = list
+        val finalIndex = index
+        // The first song waits a moment for its answer, so it starts on the 320 file rather than being swapped a beat later.
+        if (HiRate.enabled && !first.isLocal && !HiRate.isAnswered(first.id)) {
+            scope.launch { HiRate.await(first, FIRST_SONG_WAIT_MS); start(c, finalList, finalIndex) }
+        } else start(c, finalList, finalIndex)
+    }
+
+    /** Hand a queue to the player and begin. */
+    private fun start(c: MediaController, list: List<Track>, index: Int) {
         _state.value = _state.value.copy(error = null, status = Status.LOADING, durationMs = 0)
         c.setMediaItems(list.map(::mediaItem), index, 0)
         c.prepare()
         c.play()
         sync()
     }
+
+    /** How long the first song of a queue waits for the second source's answer before starting anyway. */
+    private const val FIRST_SONG_WAIT_MS = 2_000L
 
     fun playTrack(t: Track, ctx: PlayContext? = PlayContext("track", t.title)) = playTracks(listOf(t), 0, ctx)
 
@@ -347,6 +364,7 @@ object PlayerController {
     fun enqueueNext(t: Track) {
         val c = controller ?: return
         if (c.mediaItemCount == 0) return playTrack(t)
+        HiRate.request(t)
         c.addMediaItem(c.currentMediaItemIndex + 1, mediaItem(t))
         unshuffled = unshuffled?.let { list -> val i = list.indexOfFirst { it.id == _state.value.current?.id }; list.toMutableList().apply { add(i + 1, t) } }
         sync()
@@ -356,6 +374,7 @@ object PlayerController {
     fun enqueueLast(t: Track) {
         val c = controller ?: return
         if (c.mediaItemCount == 0) return playTrack(t)
+        HiRate.request(t)
         c.addMediaItem(mediaItem(t))
         unshuffled = unshuffled?.plus(t)
         sync()
@@ -416,18 +435,36 @@ object PlayerController {
     fun quality() = Prefs.quality.value
 
     /**
-     * Swap in the second source's file for songs it turned out to carry. Only songs after the one
-     * playing are touched, so nothing interrupts what is being heard.
+     * Swap in the second source's file for every song it turned out to carry, the one playing
+     * included: it keeps its place and carries on from the better file. Items already built on
+     * that file are left alone, so nothing is reloaded twice.
      */
     private fun upgradeQueue() {
         val c = controller ?: return
-        val from = (c.currentMediaItemIndex + 1).coerceAtLeast(0)
-        for (i in from until c.mediaItemCount) {
+        if (!HiRate.enabled) return
+        val cur = c.currentMediaItemIndex
+        for (i in cur.coerceAtLeast(0) until c.mediaItemCount) {
             val id = c.getMediaItemAt(i).mediaId
-            if (id in upgraded || AoideMedia.hiRateUri(id) == null) continue
+            if (id in upgraded || AoideMedia.isBuiltAs320(id) || AoideMedia.hiRateUri(id) == null) continue
             val t = TrackRegistry.get(id) ?: continue
             upgraded.add(id)
-            runCatching { c.replaceMediaItem(i, mediaItem(t)) }
+            if (i == cur) swapCurrent(t) else runCatching { c.replaceMediaItem(i, mediaItem(t)) }
+        }
+    }
+
+    /** Move the song playing onto the second source's file at the same position. Not worth a blip when it is nearly over. */
+    private fun swapCurrent(t: Track) {
+        val c = controller ?: return
+        val pos = c.currentPosition
+        if (c.duration > 0 && c.duration - pos < 15_000) return
+        val wasPlaying = c.playWhenReady
+        val idx = c.currentMediaItemIndex
+        _state.value = _state.value.copy(durationMs = 0)
+        runCatching {
+            c.replaceMediaItem(idx, mediaItem(t))
+            c.seekTo(idx, pos)
+            c.prepare()
+            if (wasPlaying) c.play()
         }
     }
 
@@ -447,6 +484,7 @@ object PlayerController {
             val have = (0 until c.mediaItemCount).map { c.getMediaItemAt(it).mediaId }.toSet()
             val fresh = mix.filter { it.id !in have }.distinctBy { it.id }
             if (fresh.isEmpty()) { Toasts.show("Couldn't build a radio for this song"); return@launch }
+            HiRate.requestAll(fresh)
             c.addMediaItems(fresh.map(::mediaItem))
             unshuffled = null
             sync()

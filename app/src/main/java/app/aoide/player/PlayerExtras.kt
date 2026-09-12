@@ -13,6 +13,7 @@ import androidx.media3.common.Player
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.exoplayer.ExoPlayer
 import app.aoide.data.Catalog
+import app.aoide.data.HiRate
 import app.aoide.data.Prefs
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -158,6 +159,7 @@ class PlayerExtras(context: Context, private val exo: ExoPlayer) : Player.Listen
             val have = (0 until exo.mediaItemCount).map { exo.getMediaItemAt(it).mediaId }.toSet()
             val fresh = recs.filter { it.id !in have }.distinctBy { it.id }.take(15)
             if (fresh.isEmpty()) return@launch
+            HiRate.requestAll(fresh)
             exo.addMediaItems(fresh.map { AoideMedia.toPlayable(AoideMedia.mediaItemFor(it, autoplay = true)) })
         }
     }

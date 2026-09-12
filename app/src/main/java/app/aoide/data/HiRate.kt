@@ -9,7 +9,9 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withPermit
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.contentOrNull
@@ -51,11 +53,33 @@ object HiRate {
 
     val enabled: Boolean get() = !Prefs.isReady() || Prefs.hiRate.on
 
-    /** The 320 kbps address for a song, if this source has been found to carry it. */
-    fun url(trackId: String): String? = _known.value[trackId]?.takeIf { it.isNotEmpty() }
+    /**
+     * The 320 kbps address for a song, if this source has been found to carry it. An answer kept
+     * from an earlier day is read straight from storage, so a queue built at launch, before any
+     * row has asked, still gets the file it found last week.
+     */
+    fun url(trackId: String): String? {
+        _known.value[trackId]?.let { return it.takeIf { v -> v.isNotEmpty() } }
+        val s = stored(trackId) ?: return null
+        _known.value = _known.value + (trackId to s)
+        return s.takeIf { it.isNotEmpty() }
+    }
     fun has(trackId: String): Boolean = url(trackId) != null
     /** True once the answer is known either way, so callers can tell "no" from "not asked yet". */
-    fun isAnswered(trackId: String): Boolean = _known.value.containsKey(trackId)
+    fun isAnswered(trackId: String): Boolean = _known.value.containsKey(trackId) || (url(trackId) != null)
+
+    /**
+     * The answer for a song, waiting up to [timeoutMs] for a fresh lookup. Null when the source
+     * does not carry it, or when it did not answer in time; the queue then starts on Opus and is
+     * swapped the moment the answer lands.
+     */
+    suspend fun await(t: Track, timeoutMs: Long): String? {
+        if (!enabled || t.isLocal || t.duration <= 0) return null
+        url(t.id)?.let { return it }
+        if (_known.value.containsKey(t.id)) return null
+        request(t)
+        return withTimeoutOrNull(timeoutMs) { known.first { it.containsKey(t.id) }[t.id] }?.takeIf { it.isNotEmpty() }
+    }
 
     /** Ask, once, whether this source carries the song. Cheap to call from every row. */
     fun request(t: Track) {
@@ -141,6 +165,7 @@ object HiRate {
         return if (System.currentTimeMillis() - at < TTL) s.substringBeforeLast('|') else null
     }
 
-    /** Test seam. */
+    /** Test seams. */
     fun setKnownForTest(trackId: String, url: String) { _known.value = _known.value + (trackId to url) }
+    fun forgetInMemoryForTest() { _known.value = emptyMap(); pending.clear() }
 }

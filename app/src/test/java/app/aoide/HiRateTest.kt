@@ -59,6 +59,21 @@ class HiRateTest {
         assertNull("a recording of another length is a different cut", url)
     }
 
+    /** The launch-time miss: an answer kept in storage must be readable before any row has asked. */
+    @Test fun aStoredAnswerIsInstantAfterAColdStart() = runBlocking {
+        app.aoide.data.Prefs.init(androidx.test.core.app.ApplicationProvider.getApplicationContext())
+        val t = t("stored-1", "Mystery of Love", "Sufjan Stevens", 249)
+        val first = HiRate.await(t, 8_000)
+        println("HIRATE-AWAIT $first")
+        assertNotNull("the lookup should land within the wait", first)
+        // Forget everything in memory, as a fresh process would, then ask synchronously.
+        HiRate.forgetInMemoryForTest()
+        val again = HiRate.url(t.id)
+        println("HIRATE-COLD $again")
+        assertEquals("storage must answer without a lookup", first, again)
+        assertTrue(HiRate.isAnswered(t.id))
+    }
+
     @Test fun decryptsItsOwnAddressFormat() {
         // An address its web player would hand out, encrypted with the key its own site uses.
         val enc = "Xs2rIkRk1I1MPn3OJUqbrjEXoEbDQ2p9LMs+Nn3Zj6Rk1I1MPn3OJQ=="

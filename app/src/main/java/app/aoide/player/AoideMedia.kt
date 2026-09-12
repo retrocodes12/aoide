@@ -25,6 +25,7 @@ import app.aoide.data.Track
 import app.aoide.data.Music
 import app.aoide.data.json
 import kotlinx.coroutines.runBlocking
+import java.util.concurrent.ConcurrentHashMap
 import kotlinx.serialization.encodeToString
 
 /**
@@ -43,6 +44,9 @@ import kotlinx.serialization.encodeToString
 @UnstableApi
 object AoideMedia {
     private var appContext: Context? = null
+    /** Ids whose queue item was built on the second source's file, so a later upgrade pass knows to leave them be. */
+    private val builtAs320 = ConcurrentHashMap.newKeySet<String>()
+    fun isBuiltAs320(trackId: String): Boolean = trackId in builtAs320
 
     fun mediaSourceFactory(context: Context): MediaSource.Factory {
         appContext = context.applicationContext
@@ -75,12 +79,14 @@ object AoideMedia {
         fromExtras?.let(TrackRegistry::put)
         // A browser (Android Auto) sends a bare id: rebuild the whole item from the track the library handed out.
         val base = if (fromExtras == null) TrackRegistry.get(id)?.let(::mediaItemFor) ?: item else item
+        builtAs320.remove(id)
         if (LocalMedia.isLocal(id)) return base.buildUpon().setUri(Uri.parse(LocalMedia.uriFor(id))).setMimeType(null).build()
         Downloads.get(id)?.takeIf { it.progressive }?.let { d ->
             StreamResolver.note(StreamResolver.downloadInfo(d))
             return base.buildUpon().setUri(Uri.parse("file://" + d.file)).setMimeType(null).build()
         }
         hiRateUri(id)?.let { url ->
+            builtAs320.add(id)
             StreamResolver.note(StreamInfo(id, quality = "AAC ${HiRate.KBPS} kbps", sampleRate = 44_100, source = "hirate"))
             return base.buildUpon().setUri(Uri.parse(url)).setMimeType(null).build()
         }
