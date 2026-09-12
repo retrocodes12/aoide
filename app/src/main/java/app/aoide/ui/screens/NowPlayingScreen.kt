@@ -3,7 +3,29 @@
 package app.aoide.ui.screens
 
 import androidx.activity.compose.BackHandler
-import androidx.compose.animation.Crossfade
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.Spring
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideOutVertically
+import androidx.compose.animation.togetherWith
+import androidx.compose.foundation.gestures.animateScrollBy
+import androidx.compose.foundation.gestures.scrollBy
+import androidx.compose.foundation.interaction.DragInteraction
+import androidx.compose.foundation.layout.BoxWithConstraints
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableLongStateOf
+import androidx.compose.ui.draw.clipToBounds
+import androidx.compose.ui.graphics.BlurEffect
+import androidx.compose.ui.graphics.TileMode
+import androidx.compose.ui.graphics.TransformOrigin
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.layout.onSizeChanged
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.first
+import kotlin.math.abs
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.core.spring
@@ -91,11 +113,13 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.media3.common.Player
 import app.aoide.data.Catalog
+import app.aoide.data.LyricLine
 import app.aoide.data.Lyrics
 import app.aoide.data.Track
 import app.aoide.data.formatTime
@@ -251,7 +275,21 @@ fun NowPlayingScreen(tint: Tint, onNavigate: (String) -> Unit) {
                                 val active = synced.indexOfLast { it.t <= at }
                                 // Hold four lines even at the end of the song, so the card never changes height.
                                 val from = active.coerceAtLeast(0).coerceAtMost((synced.size - 4).coerceAtLeast(0))
-                                Crossfade(targetState = from, animationSpec = tween(320), label = "lyrics_card") { start ->
+                                // Lines roll up a row at a time, the way the streaming apps do it: the three lines both
+                                // windows share sit at the same pixels throughout, the top one slides out and fades,
+                                // the new bottom one slides in underneath. A seek backwards rolls the other way.
+                                var rowPx by remember { mutableIntStateOf(0) }
+                                AnimatedContent(
+                                    targetState = from,
+                                    transitionSpec = {
+                                        val step = if (targetState >= initialState) rowPx else -rowPx
+                                        val glide = tween<IntOffset>(380, easing = FastOutSlowInEasing)
+                                        (slideInVertically(glide) { step } togetherWith slideOutVertically(glide) { -step } + fadeOut(tween(260)))
+                                            .using(null).apply { targetContentZIndex = targetState.toFloat() }
+                                    },
+                                    modifier = Modifier.clipToBounds(),
+                                    label = "lyrics_card",
+                                ) { start ->
                                     Column {
                                         synced.drop(start).take(4).forEachIndexed { n, line ->
                                             Text(
@@ -261,6 +299,7 @@ fun NowPlayingScreen(tint: Tint, onNavigate: (String) -> Unit) {
                                                 color = if (active < 0 || start + n == active) tint.ink else tint.soft,
                                                 maxLines = 1,
                                                 overflow = TextOverflow.Ellipsis,
+                                                modifier = if (n == 0) Modifier.onSizeChanged { rowPx = it.height } else Modifier,
                                             )
                                         }
                                     }
@@ -333,32 +372,111 @@ private fun LyricsBody(l: Lyrics?, positionMs: Long, tint: Tint, listState: Lazy
     val sourceLines = synced?.map { it.line } ?: plain!!.lines()
     val translated by rememberResource("translate", translating, lang, sourceLines) { if (translating) Translate.lines(sourceLines, lang) else emptyList() }
     val tr: List<String> = (translated as? Resource.Ready)?.value?.takeIf { it.size == sourceLines.size } ?: emptyList()
-    LaunchedEffect(active) { if (active >= 0) listState.animateScrollToItem((active - 2).coerceAtLeast(0)) }
-    LazyColumn(modifier.fillMaxWidth(), state = listState, contentPadding = PaddingValues(horizontal = 20.dp, vertical = 24.dp)) {
-        if (synced != null) {
-            itemsIndexed(synced) { i, line ->
-                val color = when {
-                    i == active -> tint.ink
-                    i < active -> tint.faint
-                    else -> tint.soft
-                }
-                val scale by animateFloatAsState(if (i == active) 1.04f else 1f, label = "line")
-                Column(Modifier.fillMaxWidth().scale(scale).clickable { PlayerController.seekTo((line.t * 1000).toLong()) }.padding(vertical = 6.dp).semantics { contentDescription = "Lyric line" }.testTag("lyric_line")) {
-                    Text(
-                        line.line.ifBlank { "♪" },
-                        style = MaterialTheme.typography.headlineMedium.copy(fontWeight = FontWeight.ExtraBold, fontSize = size.sp, lineHeight = (size + 8).sp),
-                        color = color,
-                    )
-                    val t = tr.getOrNull(i)
-                    if (t != null && t.isNotBlank() && t != line.line) Text(t, style = MaterialTheme.typography.bodyLarge.copy(fontSize = (size * 0.6f).sp, lineHeight = (size * 0.8f).sp), color = if (i == active) tint.soft else tint.faint, modifier = Modifier.padding(top = 2.dp).testTag("lyric_translation"))
-                }
-            }
+
+    // A finger on the list means the listener is reading ahead: every line sharpens, and the song
+    // stops dragging the list along until they have let go for a few seconds.
+    var touchedAt by remember { mutableLongStateOf(0L) }
+    var browsing by remember { mutableStateOf(false) }
+    LaunchedEffect(listState) {
+        listState.interactionSource.interactions.collect { if (it is DragInteraction.Start) touchedAt = System.currentTimeMillis() }
+    }
+    LaunchedEffect(touchedAt) {
+        if (touchedAt == 0L) return@LaunchedEffect
+        browsing = true
+        delay(4_000)
+        browsing = false
+    }
+    // The sung line rides a third of the way down the screen. A line already on screen glides
+    // there on a spring; one that is not (opening mid-song, a seek) is put there outright.
+    LaunchedEffect(active, browsing) {
+        if (active < 0 || browsing) return@LaunchedEffect
+        fun drift(): Float? {
+            val info = listState.layoutInfo
+            val item = info.visibleItemsInfo.firstOrNull { it.index == active } ?: return null
+            return item.offset - info.viewportStartOffset - info.viewportSize.height * LYRIC_ANCHOR
+        }
+        val d = drift()
+        if (d != null) {
+            listState.animateScrollBy(d, spring(dampingRatio = 0.85f, stiffness = 90f))
         } else {
-            itemsIndexed(plain!!.lines()) { i, line ->
-                Text(line, style = MaterialTheme.typography.titleLarge.copy(fontSize = (size * 0.8f).sp, lineHeight = (size * 1.15f).sp), color = tint.ink)
-                val t = tr.getOrNull(i)
-                if (t != null && t.isNotBlank() && t != line) Text(t, style = MaterialTheme.typography.bodyMedium.copy(fontSize = (size * 0.55f).sp), color = tint.soft, modifier = Modifier.padding(bottom = 4.dp))
+            listState.scrollToItem(active)
+            snapshotFlow { listState.layoutInfo.visibleItemsInfo.any { it.index == active } }.first { it }
+            drift()?.let { listState.scrollBy(it) }
+        }
+    }
+    BoxWithConstraints(modifier.fillMaxWidth()) {
+        // Room below the last line, so even the closing line can reach the anchor.
+        val tail = if (maxHeight < Dp.Infinity) maxHeight * (1f - LYRIC_ANCHOR) else 320.dp
+        LazyColumn(Modifier.fillMaxSize(), state = listState, contentPadding = PaddingValues(start = 20.dp, end = 32.dp, top = 24.dp, bottom = tail)) {
+            if (synced != null) {
+                itemsIndexed(synced) { i, line ->
+                    LyricLineView(i, active, line, tr.getOrNull(i), size, tint, browsing)
+                }
+            } else {
+                itemsIndexed(plain!!.lines()) { i, line ->
+                    Text(line, style = MaterialTheme.typography.titleLarge.copy(fontSize = (size * 0.8f).sp, lineHeight = (size * 1.15f).sp), color = tint.ink)
+                    val t = tr.getOrNull(i)
+                    if (t != null && t.isNotBlank() && t != line) Text(t, style = MaterialTheme.typography.bodyMedium.copy(fontSize = (size * 0.55f).sp), color = tint.soft, modifier = Modifier.padding(bottom = 4.dp))
+                }
             }
+        }
+    }
+}
+
+/** How far down the lyrics screen the sung line sits, as a share of its height. */
+private const val LYRIC_ANCHOR = 0.3f
+
+/**
+ * One timed line. The sung line pops up on a spring and is drawn in full ink; the rest fall off
+ * with distance, fading and blurring the further they are from it, so the eye lands where the
+ * song is. While the listener is scrolling, everything sharpens so it can be read.
+ */
+@Composable
+private fun LyricLineView(i: Int, active: Int, line: LyricLine, translation: String?, size: Int, tint: Tint, browsing: Boolean) {
+    val isActive = i == active
+    // The sung line grows from its left edge; the wider end margin is the room that growth needs.
+    // Before the first line is due, nothing is sung yet, so the opening lines are all still to come.
+    val dist = if (active < 0) i + 1 else abs(i - active)
+    val scale by animateFloatAsState(if (isActive) 1.06f else 1f, spring(dampingRatio = 0.6f, stiffness = 300f), label = "scale")
+    val fade by animateFloatAsState(
+        when {
+            isActive -> 1f
+            browsing -> 0.9f
+            else -> (1f - 0.14f * dist).coerceAtLeast(0.42f)
+        },
+        spring(stiffness = Spring.StiffnessLow), label = "fade",
+    )
+    val haze by animateFloatAsState(if (isActive || browsing) 0f else dist.coerceAtMost(4) * 0.9f, spring(stiffness = Spring.StiffnessLow), label = "haze")
+    val color by animateColorAsState(
+        when {
+            isActive -> tint.ink
+            i < active -> tint.faint
+            else -> tint.soft
+        },
+        tween(320), label = "color",
+    )
+    Column(
+        Modifier.fillMaxWidth()
+            .graphicsLayer {
+                scaleX = scale
+                scaleY = scale
+                transformOrigin = TransformOrigin(0f, 0.5f)
+                alpha = fade
+                val r = haze.dp.toPx()
+                renderEffect = if (r > 0.2f) BlurEffect(r, r, TileMode.Decal) else null
+            }
+            .clickable { PlayerController.seekTo((line.t * 1000).toLong()) }
+            .padding(vertical = 7.dp)
+            .semantics { contentDescription = "Lyric line" }
+            .testTag("lyric_line"),
+    ) {
+        Text(
+            line.line.ifBlank { "♪" },
+            style = MaterialTheme.typography.headlineMedium.copy(fontWeight = FontWeight.ExtraBold, fontSize = size.sp, lineHeight = (size + 8).sp),
+            color = color,
+        )
+        if (translation != null && translation.isNotBlank() && translation != line.line) {
+            Text(translation, style = MaterialTheme.typography.bodyLarge.copy(fontSize = (size * 0.6f).sp, lineHeight = (size * 0.8f).sp), color = if (isActive) tint.soft else tint.faint, modifier = Modifier.padding(top = 2.dp).testTag("lyric_translation"))
         }
     }
 }
