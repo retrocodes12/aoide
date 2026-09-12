@@ -23,6 +23,10 @@ object AppUi {
     var lyricsOpen by mutableStateOf(false)
     var queueOpen by mutableStateOf(false)
     var sleepOpen by mutableStateOf(false)
+    /** The update card, offered once a launch when a newer build is found. */
+    var updateOpen by mutableStateOf(false)
+    /** Set once the card has been answered, so it does not reappear until the app is opened again. */
+    var updateAnswered by mutableStateOf(false)
     var menuTrack by mutableStateOf<Track?>(null)
     var menuRemove by mutableStateOf<(() -> Unit)?>(null)
     var confirm by mutableStateOf<Confirm?>(null)

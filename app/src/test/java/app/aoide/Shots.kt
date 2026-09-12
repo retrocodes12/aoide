@@ -157,6 +157,9 @@ class Shots {
         launch(); val (a, tracks) = album(); playing(tracks, a.title)
         await { has("mini_player") }; settle(1500); shot("10-mini")
         AppUi.nowPlayingOpen = true; await { has("now_playing") }; settle(7000); shot("11-now-playing")
+        // The card follows the song: put the player mid-verse and capture what it shows.
+        PlayerController.setStateForTest(PlayerUiState(queue = tracks, index = 0, status = Status.PLAYING, positionMs = 75_000, durationMs = 288_000, context = PlayContext("album", a.title, "album/$ALBUM")))
+        await { has("lyrics_card") }; settle(3000); shot("34-lyrics-card-synced")
         AppUi.lyricsOpen = true; await { has("lyrics_screen") }; settle(3000); shot("12-lyrics")
         AppUi.lyricsOpen = false; AppUi.queueOpen = true; await { has("queue_screen") }; settle(800); shot("13-queue")
     }
@@ -214,10 +217,14 @@ class Shots {
 
     @Test fun updates() {
         launch()
-        val rel = app.aoide.data.Updates.Release("9.9.0", "Aoide 9.9.0", "Sample release notes: a new screen, two fixes.", app.aoide.data.Updates.PAGE, "https://example.invalid/Aoide-9.9.0.apk", 3_100_000L, "")
+        val rel = app.aoide.data.Updates.Release("9.9.0", "Aoide 9.9.0", "Added\n- The lyrics card on the player now follows the song\n- Songs opened from Home play at the higher bitrate\n\nFixed\n- The import screen's buttons no longer hang at the left edge", app.aoide.data.Updates.PAGE, "https://example.invalid/Aoide-9.9.0.apk", 3_100_000L, "")
         app.aoide.data.Updates.setStateForTest(app.aoide.data.Updates.State.Available(rel))
         await { has("update_banner") }; settle(600); shot("31-update-banner")
         navigate("settings"); await { has("updates_section") }; settle(600); shot("32-settings-updates")
+        // The card the app opens with when a newer build is out.
+        app.aoide.ui.AppUi.updateOpen = true
+        await { has("update_sheet") }; settle(800); shot("35-update-card")
+        app.aoide.ui.AppUi.updateOpen = false
         app.aoide.data.Updates.setStateForTest(app.aoide.data.Updates.State.Idle)
     }
 

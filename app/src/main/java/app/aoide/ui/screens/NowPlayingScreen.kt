@@ -3,7 +3,9 @@
 package app.aoide.ui.screens
 
 import androidx.activity.compose.BackHandler
+import androidx.compose.animation.Crossfade
 import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.tween
 import androidx.compose.animation.core.spring
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -240,10 +242,34 @@ fun NowPlayingScreen(tint: Tint, onNavigate: (String) -> Unit) {
                 Spacer(Modifier.height(10.dp))
                 when (val l = lyrics) {
                     is Resource.Ready -> {
-                        // Same rule as the lyrics screen: synced lines when there are any, else plain text, else nothing.
-                        val lines = lyricLines(l.value)
-                        if (lines.isEmpty()) Text("We don't have lyrics for this one.", style = MaterialTheme.typography.bodyMedium, color = tint.ink)
-                        else lines.take(4).forEach { Text(it, style = MaterialTheme.typography.titleLarge, color = tint.ink, maxLines = 1, overflow = TextOverflow.Ellipsis) }
+                        val synced = l.value?.synced?.takeIf { it.isNotEmpty() }
+                        val plain = lyricLines(l.value)
+                        when {
+                            // Timed words follow the song here too: the line being sung, then what comes next.
+                            synced != null -> {
+                                val at = s.positionMs / 1000.0 + 0.25
+                                val active = synced.indexOfLast { it.t <= at }
+                                // Hold four lines even at the end of the song, so the card never changes height.
+                                val from = active.coerceAtLeast(0).coerceAtMost((synced.size - 4).coerceAtLeast(0))
+                                Crossfade(targetState = from, animationSpec = tween(320), label = "lyrics_card") { start ->
+                                    Column {
+                                        synced.drop(start).take(4).forEachIndexed { n, line ->
+                                            Text(
+                                                line.line.ifBlank { "♪" },
+                                                style = MaterialTheme.typography.titleLarge,
+                                                // Before the first line is due, nothing is being sung, so nothing is dimmed.
+                                                color = if (active < 0 || start + n == active) tint.ink else tint.soft,
+                                                maxLines = 1,
+                                                overflow = TextOverflow.Ellipsis,
+                                            )
+                                        }
+                                    }
+                                }
+                            }
+                            plain.isEmpty() -> Text("We don't have lyrics for this one.", style = MaterialTheme.typography.bodyMedium, color = tint.ink)
+                            // Untimed words cannot follow anything; the opening lines stand as a taster.
+                            else -> plain.take(4).forEach { Text(it, style = MaterialTheme.typography.titleLarge, color = tint.ink, maxLines = 1, overflow = TextOverflow.Ellipsis) }
+                        }
                     }
                     is Resource.Loading -> Text("Looking for lyrics…", style = MaterialTheme.typography.bodyMedium, color = tint.ink)
                     is Resource.Failed -> Text("Lyrics unavailable", style = MaterialTheme.typography.bodyMedium, color = tint.ink)

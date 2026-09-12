@@ -74,7 +74,7 @@ object HiRate {
      * swapped the moment the answer lands.
      */
     suspend fun await(t: Track, timeoutMs: Long): String? {
-        if (!enabled || t.isLocal || t.duration <= 0) return null
+        if (!enabled || t.isLocal) return null
         url(t.id)?.let { return it }
         if (_known.value.containsKey(t.id)) return null
         request(t)
@@ -83,7 +83,7 @@ object HiRate {
 
     /** Ask, once, whether this source carries the song. Cheap to call from every row. */
     fun request(t: Track) {
-        if (!enabled || t.isLocal || t.duration <= 0) return
+        if (!enabled || t.isLocal) return
         if (_known.value.containsKey(t.id) || !pending.add(t.id)) return
         stored(t.id)?.let { _known.value = _known.value + (t.id to it); pending.remove(t.id); return }
         scope.launch {
@@ -103,9 +103,12 @@ object HiRate {
 
     /** The 320 kbps URL for the same recording, or null when this source does not have it. */
     suspend fun lookup(t: Track): String? {
-        val primary = t.primaryArtist?.name.orEmpty()
-        val hits = search("$primary ${t.title}".trim())
-        val want = Parse.norm(t.title)
+        // Cards in browse rows carry no length, and the match needs one to tell a cut from a remix;
+        // ask the service for the song's own details before giving up on it.
+        val song = if (t.duration > 0) t else runCatching { Catalog.track(t.id) }.getOrNull() ?: return null
+        val primary = song.primaryArtist?.name.orEmpty()
+        val hits = search("$primary ${song.title}".trim())
+        val want = Parse.norm(song.title)
         val wantArtist = Parse.norm(primary)
         val best = hits.filter { c ->
             val got = Parse.norm(c.title)
@@ -114,9 +117,9 @@ object HiRate {
             // The artist must really be there: this catalogue is full of tribute and cover acts.
             val names = Parse.norm(c.artists)
             val artistOk = wantArtist.isNotEmpty() && (names.contains(wantArtist) || wantArtist.contains(names))
-            val lengthOk = t.duration <= 0 || abs(c.durationSec - t.duration) <= 3
+            val lengthOk = song.duration <= 0 || abs(c.durationSec - song.duration) <= 3
             titleOk && artistOk && lengthOk && c.has320
-        }.minByOrNull { abs(it.durationSec - t.duration) } ?: return null
+        }.minByOrNull { abs(it.durationSec - song.duration) } ?: return null
         return mediaUrl(best.encrypted)
     }
 

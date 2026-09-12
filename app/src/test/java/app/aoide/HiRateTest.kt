@@ -46,6 +46,20 @@ class HiRateTest {
         }
     }
 
+    /**
+     * The Home bug: a song tapped from a browse card carries an id and little else, no length, and
+     * the lookup used to refuse it outright, so those songs always fell back to Opus.
+     */
+    @Test fun findsASongEvenWhenTheCardCarriesNoLength() = runBlocking {
+        val real = app.aoide.data.Catalog.searchTracks("mystery of love sufjan stevens", 1).firstOrNull()
+        if (real == null) { println("HIRATE-CARD-SKIP the catalogue did not answer"); return@runBlocking }
+        val card = Track(id = real.id, title = real.title, duration = 0)
+        val url = HiRate.lookup(card)
+        println("HIRATE-CARD id=${real.id} len=${card.duration} -> $url")
+        assertNotNull("a card with no length must still be looked up", url)
+        assertTrue("expected the 320 file, got $url", url!!.endsWith("_320.mp4"))
+    }
+
     @Test fun refusesCoversAndTributes() = runBlocking {
         // This catalogue has no Radiohead, only piano tributes and lullaby versions of their songs.
         val url = HiRate.lookup(t("b", "Paranoid Android", "Radiohead", 383))

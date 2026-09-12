@@ -79,6 +79,7 @@ import app.aoide.ui.screens.ImportScreen
 import app.aoide.ui.screens.MoodScreen
 import app.aoide.ui.screens.DiscographyScreen
 import app.aoide.ui.components.SleepSheet
+import app.aoide.ui.components.UpdateSheet
 import app.aoide.ui.theme.Aoide
 import kotlinx.coroutines.delay
 
@@ -165,6 +166,14 @@ fun AppRoot() {
         AppUi.menuTrack?.let { t -> TrackMenuSheet(t, AppUi.menuRemove, { r -> AppUi.closeOverlays(); navigate(r) }) { AppUi.menuTrack = null } }
         AppUi.confirm?.let { c -> ConfirmSheet(c) { AppUi.confirm = null } }
         if (AppUi.sleepOpen) SleepSheet { AppUi.sleepOpen = false }
+
+        // A newer build announces itself once a launch, rather than waiting to be found in Settings.
+        val update by Updates.state.collectAsState()
+        LaunchedEffect(update) {
+            val r = (update as? Updates.State.Available)?.release
+            if (r != null && !AppUi.updateAnswered && !Updates.isDismissed(r.version)) AppUi.updateOpen = true
+        }
+        if (AppUi.updateOpen) UpdateSheet { AppUi.updateOpen = false; AppUi.updateAnswered = true }
 
         ToastHost(Modifier.align(Alignment.BottomCenter).padding(bottom = if (AppUi.nowPlayingOpen) 200.dp else 132.dp).navigationBarsPadding())
     }
