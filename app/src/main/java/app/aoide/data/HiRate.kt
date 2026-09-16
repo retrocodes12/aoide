@@ -6,6 +6,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withPermit
@@ -61,7 +62,7 @@ object HiRate {
     fun url(trackId: String): String? {
         _known.value[trackId]?.let { return it.takeIf { v -> v.isNotEmpty() } }
         val s = stored(trackId) ?: return null
-        _known.value = _known.value + (trackId to s)
+        _known.update { it + (trackId to s) }
         return s.takeIf { it.isNotEmpty() }
     }
     fun has(trackId: String): Boolean = url(trackId) != null
@@ -85,12 +86,15 @@ object HiRate {
     fun request(t: Track) {
         if (!enabled || t.isLocal) return
         if (_known.value.containsKey(t.id) || !pending.add(t.id)) return
-        stored(t.id)?.let { _known.value = _known.value + (t.id to it); pending.remove(t.id); return }
+        stored(t.id)?.let { v -> _known.update { it + (t.id to v) }; pending.remove(t.id); return }
         scope.launch {
             gate.withPermit {
-                val found = runCatching { lookup(t) }.getOrNull().orEmpty()
-                remember(t.id, found)
-                _known.value = _known.value + (t.id to found)
+                // A lookup that failed to reach the source is not a "no": it is remembered for this session only,
+                // so a week of Opus does not follow one moment without a connection.
+                val r = runCatching { lookup(t) }
+                val found = r.getOrNull().orEmpty()
+                if (r.isSuccess) remember(t.id, found)
+                _known.update { it + (t.id to found) }
                 pending.remove(t.id)
             }
         }
@@ -161,14 +165,22 @@ object HiRate {
 
     private fun unescape(s: String) = s.replace("&quot;", "\"").replace("&amp;", "&").replace("&#039;", "'").replace("&apos;", "'").replace("&lt;", "<").replace("&gt;", ">")
 
-    private fun remember(trackId: String, v: String) { if (Prefs.isReady()) Prefs.putString("hr:$trackId", "$v|${System.currentTimeMillis()}") }
+    private fun remember(trackId: String, v: String) { Prefs.answers?.edit()?.putString(trackId, "$v|${System.currentTimeMillis()}")?.apply() }
     private fun stored(trackId: String): String? {
-        val s = (if (Prefs.isReady()) Prefs.getString("hr:$trackId") else null) ?: return null
+        val s = Prefs.answers?.getString(trackId, null) ?: return null
         val at = s.substringAfterLast('|').toLongOrNull() ?: return null
         return if (System.currentTimeMillis() - at < TTL) s.substringBeforeLast('|') else null
     }
 
+    /** Drop answers past their week, so the file the answers live in does not grow forever. Called once at launch. */
+    fun prune() {
+        val sp = Prefs.answers ?: return
+        val now = System.currentTimeMillis()
+        val stale = sp.all.filter { (_, v) -> (v as? String)?.substringAfterLast('|')?.toLongOrNull()?.let { now - it >= TTL } ?: true }.keys
+        if (stale.isNotEmpty()) sp.edit().apply { stale.forEach(::remove) }.apply()
+    }
+
     /** Test seams. */
-    fun setKnownForTest(trackId: String, url: String) { _known.value = _known.value + (trackId to url) }
+    fun setKnownForTest(trackId: String, url: String) { _known.update { it + (trackId to url) } }
     fun forgetInMemoryForTest() { _known.value = emptyMap(); pending.clear() }
 }

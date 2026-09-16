@@ -18,6 +18,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.sample
 import kotlinx.coroutines.launch
 
 /** Keeps the process alive while [Downloads] drains its queue, and shows the progress in the shade. */
@@ -32,7 +33,8 @@ class DownloadService : Service() {
         nm.createNotificationChannel(NotificationChannel(CHANNEL, "Downloads", NotificationManager.IMPORTANCE_LOW).apply { description = "Songs being saved for offline listening" })
         ServiceCompat.startForeground(this, ID, build(null, 0), if (Build.VERSION.SDK_INT >= 29) ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC else 0)
         scope.launch {
-            combine(Downloads.current, Downloads.queue) { c, q -> c to q.size }.collect { (cur, waiting) ->
+            // The shade is repainted at most twice a second, whatever the download reports.
+            combine(Downloads.current, Downloads.queue) { c, q -> c to q.size }.sample(500).collect { (cur, waiting) ->
                 if (cur == null && waiting == 0) {
                     ServiceCompat.stopForeground(this@DownloadService, ServiceCompat.STOP_FOREGROUND_REMOVE)
                     stopSelf()
@@ -48,8 +50,9 @@ class DownloadService : Service() {
         super.onDestroy()
     }
 
+    private val open by lazy { PendingIntent.getActivity(this, 1, Intent(this, MainActivity::class.java), PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE) }
+
     private fun build(cur: DownloadProgress?, waiting: Int): android.app.Notification {
-        val open = PendingIntent.getActivity(this, 1, Intent(this, MainActivity::class.java), PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
         val title = cur?.track?.title ?: "Preparing downloads"
         val sub = listOfNotNull(cur?.track?.artistNames, if (waiting > 0) "$waiting more in the queue" else null).joinToString(" · ")
         return NotificationCompat.Builder(this, CHANNEL)

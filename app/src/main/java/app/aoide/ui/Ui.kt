@@ -13,10 +13,9 @@ import kotlinx.coroutines.flow.StateFlow
 data class Confirm(val title: String, val action: String, val body: String? = null, val onConfirm: () -> Unit)
 
 /**
- * Cross-screen UI state: overlays, toasts, the track menu, and two tints. [page] belongs to the
- * screen being browsed (album heads); [player] belongs to the song that is playing (mini player,
- * now playing, lyrics). Browsing another record must never recolour the capsule of the song still
- * playing.
+ * Cross-screen UI state: overlays, toasts, the track menu, and the player's tint. [player] belongs
+ * to the song that is playing (mini player, now playing, lyrics); browsing another record must
+ * never recolour the capsule of the song still playing, so page heads keep their own tints.
  */
 object AppUi {
     var nowPlayingOpen by mutableStateOf(false)
@@ -29,13 +28,19 @@ object AppUi {
     var updateAnswered by mutableStateOf(false)
     var menuTrack by mutableStateOf<Track?>(null)
     var menuRemove by mutableStateOf<(() -> Unit)?>(null)
+    /** The list the song was opened from and its place in it, for "play from here" and "add the rest to the queue". */
+    var menuList by mutableStateOf<List<Track>?>(null)
+    var menuIndex by mutableStateOf(-1)
+    var menuRemoveLabel by mutableStateOf("Remove from this playlist")
     var confirm by mutableStateOf<Confirm?>(null)
-    var page by mutableStateOf(Tint.FALLBACK)
     var player by mutableStateOf(Tint.FALLBACK)
 
-    fun openMenu(t: Track, onRemove: (() -> Unit)? = null) {
+    fun openMenu(t: Track, onRemove: (() -> Unit)? = null, list: List<Track>? = null, index: Int = -1, removeLabel: String = "Remove from this playlist") {
         menuTrack = t
         menuRemove = onRemove
+        menuList = list
+        menuIndex = index
+        menuRemoveLabel = removeLabel
     }
 
     fun ask(title: String, action: String, body: String? = null, onConfirm: () -> Unit) {
@@ -51,7 +56,7 @@ object AppUi {
     }
 }
 
-/** Test seam: a route the real NavHost navigates to when set. */
+/** A route the NavHost should go to next: launcher shortcuts, shared links and the tests all hand one in here. */
 object TestNav {
     var request by mutableStateOf<String?>(null)
     fun go(route: String) { request = route }

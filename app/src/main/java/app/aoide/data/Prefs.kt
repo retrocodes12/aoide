@@ -8,6 +8,12 @@ import kotlinx.coroutines.flow.StateFlow
 /** Small settings. Anything bigger lives in Library (a JSON file). */
 object Prefs {
     private lateinit var sp: SharedPreferences
+    /** The second source's per-song answers live in their own file: thousands of keys that must not sit in the settings file. */
+    var answers: SharedPreferences? = null
+        private set
+    /** Where long recordings were left, see Positions. */
+    var positions: SharedPreferences? = null
+        private set
     private val _quality = MutableStateFlow(Quality.HIGH)
     val quality: StateFlow<Quality> = _quality
     private val _previewNoted = MutableStateFlow(false)
@@ -51,6 +57,11 @@ object Prefs {
 
     fun init(context: Context) {
         sp = context.getSharedPreferences("aoide", Context.MODE_PRIVATE)
+        answers = context.getSharedPreferences("aoide_answers", Context.MODE_PRIVATE)
+        positions = context.getSharedPreferences("aoide_positions", Context.MODE_PRIVATE)
+        // Earlier builds kept per-song answers and positions in this file; sweep them out once.
+        val old = sp.all.keys.filter { it.startsWith("hr:") || it.startsWith("pos:") }
+        if (old.isNotEmpty()) sp.edit().apply { old.forEach(::remove) }.apply()
         _quality.value = runCatching { Quality.valueOf(sp.getString("quality", null) ?: "") }.getOrDefault(Quality.HIGH)
         _previewNoted.value = sp.getBoolean("preview_noted", false)
         switches.forEach { it.load() }
@@ -63,7 +74,7 @@ object Prefs {
 
     fun setQuality(q: Quality) {
         _quality.value = q
-        sp.edit().putString("quality", q.name).apply()
+        if (isReady()) sp.edit().putString("quality", q.name).apply()
     }
 
     /** False until init has run (plain JVM tests, very early code paths). */
@@ -71,11 +82,11 @@ object Prefs {
 
     fun notePreview() {
         _previewNoted.value = true
-        sp.edit().putBoolean("preview_noted", true).apply()
+        if (isReady()) sp.edit().putBoolean("preview_noted", true).apply()
     }
 
-    fun getLong(key: String): Long = sp.getLong(key, -1L)
-    fun putLong(key: String, value: Long) = sp.edit().putLong(key, value).apply()
-    fun getString(key: String): String? = sp.getString(key, null)
-    fun putString(key: String, value: String?) = sp.edit().putString(key, value).apply()
+    fun getLong(key: String): Long = if (isReady()) sp.getLong(key, -1L) else -1L
+    fun putLong(key: String, value: Long) { if (isReady()) sp.edit().putLong(key, value).apply() }
+    fun getString(key: String): String? = if (isReady()) sp.getString(key, null) else null
+    fun putString(key: String, value: String?) { if (isReady()) sp.edit().putString(key, value).apply() }
 }

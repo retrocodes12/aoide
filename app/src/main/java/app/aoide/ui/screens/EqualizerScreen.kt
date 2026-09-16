@@ -58,8 +58,9 @@ fun EqualizerScreen(onBack: () -> Unit) {
             val db = eq.bands.getOrElse(i) { 0 }
             Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp), verticalAlignment = Alignment.CenterVertically) {
                 Text(if (hz >= 1000) "${hz / 1000} kHz" else "$hz Hz", style = MaterialTheme.typography.bodyMedium, color = Aoide.subdued, modifier = Modifier.width(60.dp))
+                // The effect follows the finger; the setting is written once, when it lets go.
                 Slider(
-                    value = db.toFloat(), onValueChange = { AudioEffects.setBand(i, it.toInt()) }, valueRange = -15f..15f, enabled = eq.enabled, colors = colors,
+                    value = db.toFloat(), onValueChange = { AudioEffects.previewBand(i, it.toInt()) }, onValueChangeFinished = { AudioEffects.setBand(i, AudioEffects.state.value.bands.getOrElse(i) { 0 }) }, valueRange = -15f..15f, enabled = eq.enabled, colors = colors,
                     modifier = Modifier.weight(1f).semantics { contentDescription = "Band $hz Hz" }.testTag("eq_band"),
                 )
                 Text((if (db > 0) "+$db" else "$db") + " dB", style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.SemiBold), color = if (eq.enabled) Aoide.fg else Aoide.subdued, modifier = Modifier.width(56.dp), textAlign = TextAlign.End)
@@ -68,10 +69,10 @@ fun EqualizerScreen(onBack: () -> Unit) {
         Spacer(Modifier.height(10.dp))
         Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp), verticalAlignment = Alignment.CenterVertically) {
             Text("Bass boost", style = MaterialTheme.typography.bodyMedium, color = Aoide.subdued, modifier = Modifier.width(60.dp))
-            Slider(value = eq.bass.toFloat(), onValueChange = { AudioEffects.set(eq.copy(bass = it.toInt())) }, valueRange = 0f..100f, enabled = eq.enabled, colors = colors, modifier = Modifier.weight(1f).semantics { contentDescription = "Bass boost" }.testTag("eq_bass"))
+            Slider(value = eq.bass.toFloat(), onValueChange = { AudioEffects.previewBass(it.toInt()) }, onValueChangeFinished = { AudioEffects.set(AudioEffects.state.value) }, valueRange = 0f..100f, enabled = eq.enabled, colors = colors, modifier = Modifier.weight(1f).semantics { contentDescription = "Bass boost" }.testTag("eq_bass"))
             Text("${eq.bass}%", style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.SemiBold), color = if (eq.enabled) Aoide.fg else Aoide.subdued, modifier = Modifier.width(56.dp), textAlign = TextAlign.End)
         }
-        Text("Runs on Android's built-in Equalizer and BassBoost effects, attached to Aoide's own audio session, so it never touches other apps. Bands and ranges are whatever this phone's audio chip offers.", style = MaterialTheme.typography.bodySmall, color = Aoide.subdued, modifier = Modifier.padding(horizontal = 16.dp, vertical = 20.dp))
+        Text("Runs on Android's built-in Equalizer and BassBoost effects, attached to Aoide's own audio session, so it never touches other apps. The bands are whatever this phone's audio chip offers; each moves within ±15 dB.", style = MaterialTheme.typography.bodySmall, color = Aoide.subdued, modifier = Modifier.padding(horizontal = 16.dp, vertical = 20.dp))
         Spacer(Modifier.height(160.dp))
     }
 }

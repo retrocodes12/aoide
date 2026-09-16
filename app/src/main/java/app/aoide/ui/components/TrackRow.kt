@@ -35,7 +35,6 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import app.aoide.data.Catalog
@@ -43,6 +42,9 @@ import app.aoide.data.Downloads
 import app.aoide.data.HiRate
 import app.aoide.data.Prefs
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.remember
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.map
 import androidx.compose.foundation.border
 import androidx.compose.material.icons.filled.ArrowCircleDown
 import app.aoide.data.Track
@@ -64,19 +66,21 @@ fun TrackRow(
     showDuration: Boolean = false,
     onClick: () -> Unit,
     onRemove: (() -> Unit)? = null,
+    /** The list this row sits in and its place, so the menu can offer "play from here". */
+    list: List<Track>? = null,
+    index: Int = -1,
 ) {
-    val player by PlayerController.state.collectAsState()
     val haptics = rememberHaptics()
-    val isCurrent = player.current?.id == track.id
-    val playing = isCurrent && player.isPlaying
-    val downloads by Downloads.all.collectAsState()
-    val kept = downloads.containsKey(track.id)
+    // Each row watches only the bits about itself, so the playhead ticking four times a second wakes nothing here.
+    val isCurrent by remember(track.id) { PlayerController.state.map { it.current?.id == track.id }.distinctUntilChanged() }.collectAsState(false)
+    val playing by remember(track.id) { PlayerController.state.map { it.current?.id == track.id && it.isPlaying }.distinctUntilChanged() }.collectAsState(false)
+    val kept by remember(track.id) { Downloads.all.map { it.containsKey(track.id) }.distinctUntilChanged() }.collectAsState(false)
     val hiRateOn by Prefs.hiRate.value.collectAsState()
-    val hiKnown by HiRate.known.collectAsState()
-    if (hiRateOn) LaunchedEffect(track.id) { HiRate.request(track) }
-    val hi320 = hiKnown[track.id]?.isNotEmpty() == true
+    val hi320 by remember(track.id) { HiRate.known.map { it[track.id]?.isNotEmpty() == true }.distinctUntilChanged() }.collectAsState(false)
+    LaunchedEffect(track.id, hiRateOn) { if (hiRateOn) HiRate.request(track) }
+    val openMenu = { AppUi.openMenu(track, onRemove, list, index) }
     Row(
-        Modifier.fillMaxWidth().combinedClickable(onClick = onClick, onLongClick = { Haptics.confirm(haptics); AppUi.openMenu(track, onRemove) }).padding(start = 16.dp, end = 4.dp, top = 6.dp, bottom = 6.dp)
+        Modifier.fillMaxWidth().combinedClickable(onClick = onClick, onLongClick = { Haptics.confirm(haptics); openMenu() }).padding(start = 16.dp, end = 4.dp, top = 6.dp, bottom = 6.dp)
             .semantics { contentDescription = "Track ${track.title} by ${track.artistNames}" }.testTag("track_row"),
         verticalAlignment = Alignment.CenterVertically,
     ) {
@@ -116,7 +120,7 @@ fun TrackRow(
             }
         }
         if (showDuration) Text(formatTime(track.duration), style = MaterialTheme.typography.bodySmall, color = Aoide.subdued, modifier = Modifier.padding(end = 4.dp))
-        IconButton(onClick = { AppUi.openMenu(track, onRemove) }, modifier = Modifier.semantics { contentDescription = "More options for ${track.title}" }.testTag("track_more")) {
+        IconButton(onClick = openMenu, modifier = Modifier.semantics { contentDescription = "More options for ${track.title}" }.testTag("track_more")) {
             Icon(Icons.Filled.MoreVert, null, tint = Aoide.subdued)
         }
     }
@@ -145,6 +149,3 @@ fun Equaliser(modifier: Modifier = Modifier) {
 }
 
 private val Int.sp get() = androidx.compose.ui.unit.TextUnit(this.toFloat(), androidx.compose.ui.unit.TextUnitType.Sp)
-
-@Composable
-fun TrackTitleWeight() = FontWeight.Normal

@@ -74,7 +74,9 @@ internal object Parse {
     fun flexCols(r: JsonObject): List<List<JsonObject>> = arr(r["flexColumns"])?.map { c -> runList(obj(obj(c)?.get("musicResponsiveListItemFlexColumnRenderer"))?.get("text")) } ?: emptyList()
     fun fixedCols(r: JsonObject): List<String> = arr(r["fixedColumns"])?.map { c -> runs(obj(obj(c)?.get("musicResponsiveListItemFixedColumnRenderer"))?.get("text")) } ?: emptyList()
     private fun text(run: JsonObject) = str(run, "text") ?: ""
-    private fun explicitIn(r: JsonObject) = r.toString().contains("MUSIC_EXPLICIT_BADGE")
+    /** The explicit badge sits in `badges` (rows) or `subtitleBadges` (cards); a bounded walk, never a string dump of the row. */
+    private fun explicitIn(r: JsonObject): Boolean =
+        listOf(r["badges"], r["subtitleBadges"]).any { b -> all(b, "icon").any { str(obj(it), "iconType") == "MUSIC_EXPLICIT_BADGE" } }
 
     /** What kind of thing a row or card is, from the page type on its link. */
     fun pageType(e: JsonElement?): String? = str(obj(first(e, "browseEndpointContextMusicConfig")), "pageType")

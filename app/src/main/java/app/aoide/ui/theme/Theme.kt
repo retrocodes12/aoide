@@ -34,9 +34,9 @@ object Aoide {
     val rule = Color(0x1AFFFFFF)
     val fg = Color(0xFFFFFFFF)
     val subdued = Color(0xFFB3B3B3)
-    val muted = Color(0xFF7A7A7A)
+    /** 5.3:1 on the ground, so it may carry small text; the old #7A7A7A fell short of AA. */
+    val muted = Color(0xFF8A8A8A)
     var accent by androidx.compose.runtime.mutableStateOf(Color(0xFFFF7A1F))
-    val accentHover = Color(0xFFFF9550)
     val accentInk = Color(0xFF000000)
     val likedGradient: List<Color> get() = listOf(accent, androidx.compose.ui.graphics.lerp(accent, Color.White, 0.35f), androidx.compose.ui.graphics.lerp(accent, Color.White, 0.85f))
 

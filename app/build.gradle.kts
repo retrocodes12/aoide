@@ -13,9 +13,10 @@ plugins {
  */
 val keystoreFile: File = (project.findProperty("aoideKeystore") as String?)?.let(::File)
     ?: File(System.getProperty("user.home"), ".aoide/release.jks")
-val keystorePassword = (project.findProperty("aoideStorePassword") as String?) ?: System.getenv("AOIDE_STORE_PASSWORD") ?: "aoide-release"
+// No default password: a release build that finds the keystore but no password is left unsigned, loudly, rather than signed with a password anyone could read here.
+val keystorePassword: String? = (project.findProperty("aoideStorePassword") as String?) ?: System.getenv("AOIDE_STORE_PASSWORD")
 val signingAlias = (project.findProperty("aoideKeyAlias") as String?) ?: "aoide"
-val signingKeyPassword = (project.findProperty("aoideKeyPassword") as String?) ?: System.getenv("AOIDE_KEY_PASSWORD") ?: keystorePassword
+val signingKeyPassword: String? = (project.findProperty("aoideKeyPassword") as String?) ?: System.getenv("AOIDE_KEY_PASSWORD") ?: keystorePassword
 
 android {
     namespace = "app.aoide"
@@ -25,13 +26,14 @@ android {
         applicationId = "app.aoide"
         minSdk = 26
         targetSdk = 35
-        versionCode = 15
-        versionName = "0.9.4"
+        versionCode = 16
+        versionName = "0.10.0"
         vectorDrawables.useSupportLibrary = true
     }
 
     signingConfigs {
-        if (keystoreFile.exists()) {
+        if (keystoreFile.exists() && keystorePassword == null) logger.warn("Aoide: ${keystoreFile} found but AOIDE_STORE_PASSWORD is not set; the release build will be unsigned.")
+        if (keystoreFile.exists() && keystorePassword != null) {
             create("release") {
                 storeFile = keystoreFile
                 storePassword = keystorePassword

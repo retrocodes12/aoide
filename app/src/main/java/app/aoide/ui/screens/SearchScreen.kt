@@ -19,6 +19,8 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.material.icons.filled.History
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardActions
@@ -55,7 +57,6 @@ import androidx.compose.ui.unit.dp
 import app.aoide.data.Catalog
 import app.aoide.data.Hit
 import app.aoide.data.Library
-import app.aoide.data.Mood
 import app.aoide.data.PlayContext
 import app.aoide.data.Track
 import app.aoide.player.PlayerController
@@ -91,23 +92,27 @@ fun SearchScreen(initialQuery: String?, onNavigate: (String) -> Unit) {
     val keyboard = LocalSoftwareKeyboardController.current
     val lib by Library.state.collectAsState()
     val moods by rememberResource("moods") { Catalog.moods() }
+    // The results follow the typing after a short pause; the history only records a search that was committed.
     LaunchedEffect(query) {
         delay(260)
         term = query.trim()
-        if (term.length > 1) Library.recordSearch(term)
     }
+    val commit = { q: String -> val t = q.trim(); query = t; term = t; if (t.length > 1) Library.recordSearch(t); keyboard?.hide() }
+    // Completions from the service while the field is being typed into, until the words are committed.
+    var typing by remember { mutableStateOf(false) }
+    val suggestions by rememberResource("suggest", query.trim().takeIf { typing && it.length >= 2 }) { if (typing && query.trim().length >= 2) runCatching { Catalog.suggest(query.trim()) }.getOrDefault(emptyList()) else emptyList() }
 
     Column(Modifier.testTag("search")) {
         Row(Modifier.statusBarsPadding().fillMaxWidth().padding(start = 16.dp, end = 16.dp, top = 12.dp, bottom = 8.dp), verticalAlignment = Alignment.CenterVertically) {
             TextField(
                 value = query,
-                onValueChange = { query = it },
+                onValueChange = { query = it; typing = true },
                 placeholder = { Text("What do you want to listen to?", color = Color(0xFF5A5A5A), style = MaterialTheme.typography.bodyLarge) },
                 leadingIcon = { Icon(Icons.Filled.Search, null, tint = Color.Black) },
                 trailingIcon = { if (query.isNotEmpty()) IconButton(onClick = { query = "" }, modifier = Modifier.semantics { contentDescription = "Clear search" }) { Icon(Icons.Filled.Close, null, tint = Color.Black) } },
                 singleLine = true,
                 keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
-                keyboardActions = KeyboardActions(onSearch = { term = query.trim(); keyboard?.hide() }),
+                keyboardActions = KeyboardActions(onSearch = { typing = false; commit(query) }),
                 shape = RoundedCornerShape(6.dp),
                 colors = TextFieldDefaults.colors(
                     focusedContainerColor = Color.White, unfocusedContainerColor = Color.White,
@@ -118,14 +123,18 @@ fun SearchScreen(initialQuery: String?, onNavigate: (String) -> Unit) {
                 modifier = Modifier.weight(1f).semantics { contentDescription = "Search field" }.testTag("search_field"),
             )
         }
+        val hints = (suggestions as? Resource.Ready)?.value.orEmpty().filter { !it.equals(term, true) }
         if (term.isEmpty()) {
             val tiles = (moods as? Resource.Ready)?.value.orEmpty()
             LazyColumn {
                 if (lib.recentSearches.isNotEmpty()) {
-                    item { SectionTitle("Recent searches") }
-                    item {
-                        LazyRow(contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                            items(lib.recentSearches) { r -> Chip(r, false) { query = r } }
+                    item(key = "recent_title") { SectionTitle("Recent searches", action = { Text("Clear", style = MaterialTheme.typography.labelLarge, color = Aoide.subdued, modifier = Modifier.clickable { Library.clearRecentSearches() }.padding(8.dp).testTag("clear_searches")) }) }
+                    items(lib.recentSearches, key = { "recent_$it" }) { r ->
+                        Row(Modifier.fillMaxWidth().clickable { typing = false; commit(r) }.padding(start = 16.dp, end = 4.dp, top = 4.dp, bottom = 4.dp).semantics { contentDescription = "Search again for $r" }.testTag("recent_search"), verticalAlignment = Alignment.CenterVertically) {
+                            Icon(Icons.Filled.History, null, tint = Aoide.subdued, modifier = Modifier.size(20.dp))
+                            Spacer(Modifier.width(14.dp))
+                            Text(r, style = MaterialTheme.typography.bodyLarge, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
+                            IconButton(onClick = { Library.removeRecentSearch(r) }, modifier = Modifier.semantics { contentDescription = "Forget $r" }) { Icon(Icons.Filled.Close, null, tint = Aoide.subdued, modifier = Modifier.size(18.dp)) }
                         }
                     }
                 }
@@ -151,7 +160,7 @@ fun SearchScreen(initialQuery: String?, onNavigate: (String) -> Unit) {
                 item { Spacer(Modifier.height(160.dp)) }
             }
         } else {
-            Results(term, tab, { tab = it }, onNavigate)
+            Results(term, tab, { tab = it }, onNavigate, onUse = { if (term.length > 1) Library.recordSearch(term) }, hints = if (typing) hints else emptyList(), onHint = { typing = false; commit(it) })
         }
     }
 }
@@ -167,11 +176,28 @@ private fun Tile(label: String, color: Long, modifier: Modifier, onClick: () -> 
 }
 
 @Composable
-private fun Results(term: String, tab: Tab, setTab: (Tab) -> Unit, onNavigate: (String) -> Unit) {
+private fun Results(term: String, tab: Tab, setTab: (Tab) -> Unit, onNavigate: (String) -> Unit, onUse: () -> Unit, hints: List<String> = emptyList(), onHint: (String) -> Unit = {}) {
     val all by rememberResource("all", term) { Catalog.searchAll(term) }
     var retried by remember(term) { mutableStateOf(false) }
+    // An empty answer on the very first request is usually a hiccup; ask once more before calling it a miss.
+    // This lives at the screen's level, not inside a list item, so scrolling cannot dispose it mid-wait.
+    val emptyFirst = (all as? Resource.Ready)?.value?.isEmpty == true && !retried
+    LaunchedEffect(term, emptyFirst) { if (emptyFirst) { delay(700); retried = true; all.reload() } }
+    val use: (String) -> Unit = { r -> onUse(); onNavigate(r) }
     LazyColumn(Modifier.testTag("results")) {
-        item {
+        // What the service would complete the words to, while they are still being typed; the live results stay underneath.
+        if (hints.isNotEmpty()) item(key = "hints") {
+            LazyRow(Modifier.testTag("suggestions"), contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 16.dp, vertical = 2.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                items(hints, key = { it }) { h ->
+                    Row(Modifier.clip(RoundedCornerShape(50)).background(Aoide.highlight).clickable { onHint(h) }.padding(horizontal = 12.dp, vertical = 8.dp).testTag("suggestion_row"), verticalAlignment = Alignment.CenterVertically) {
+                        Icon(Icons.Filled.Search, null, tint = Aoide.subdued, modifier = Modifier.size(16.dp))
+                        Spacer(Modifier.width(6.dp))
+                        Text(h, style = MaterialTheme.typography.labelLarge, maxLines = 1)
+                    }
+                }
+            }
+        }
+        item(key = "tabs") {
             LazyRow(contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 16.dp, vertical = 8.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 items(Tab.entries) { t -> Chip(t.label, tab == t) { setTab(t) } }
             }
@@ -186,10 +212,8 @@ private fun Results(term: String, tab: Tab, setTab: (Tab) -> Unit, onNavigate: (
             return@LazyColumn
         }
         val res = (a as Resource.Ready).value
-        // An empty answer on the very first request is usually a hiccup; ask once more before calling it a miss.
         if (res.isEmpty && !retried) {
             item { SkeletonRows(4) }
-            item { LaunchedEffect(term) { delay(700); retried = true; a.reload() } }
             return@LazyColumn
         }
         if (res.isEmpty) {
@@ -199,29 +223,29 @@ private fun Results(term: String, tab: Tab, setTab: (Tab) -> Unit, onNavigate: (
         val songs = res.tracks
         if (tab == Tab.ALL) res.top?.let { hit ->
             item { SectionTitle("Top result") }
-            item { TopHit(hit, songs, term, onNavigate) }
+            item { TopHit(hit, use, onUse) }
         }
         if ((tab == Tab.ALL || tab == Tab.SONGS) && songs.isNotEmpty()) {
             item { SectionTitle("Songs") }
             val list = if (tab == Tab.SONGS) songs else songs.take(6)
-            items(list, key = { "t${it.id}" }) { t -> TrackRow(t, onClick = { PlayerController.playRadio(t) }) }
+            itemsIndexed(list, key = { i, it -> "t$i${it.id}" }) { i, t -> TrackRow(t, onClick = { onUse(); PlayerController.playRadio(t) }, list = list, index = i) }
         }
         if ((tab == Tab.ALL || tab == Tab.ARTISTS) && res.artists.isNotEmpty()) {
             item { SectionTitle("Artists") }
             items(res.artists.take(if (tab == Tab.ARTISTS) 40 else 4), key = { "ar${it.id}" }) { ar ->
-                ResultRow(Catalog.artistPicture(ar.picture, 160), ar.name, ar.listeners?.let { "Artist · $it" } ?: "Artist", round = true) { onNavigate("artist/${ar.id}") }
+                ResultRow(Catalog.artistPicture(ar.picture, 160), ar.name, ar.listeners?.let { "Artist · $it" } ?: "Artist", round = true) { use("artist/${ar.id}") }
             }
         }
         if ((tab == Tab.ALL || tab == Tab.ALBUMS) && res.albums.isNotEmpty()) {
             item { SectionTitle("Albums") }
             items(res.albums.take(if (tab == Tab.ALBUMS) 40 else 4), key = { "al${it.id}" }) { al ->
-                ResultRow(Catalog.cover(al.cover, 160), al.title, listOfNotNull(al.type?.let { if (it == "ALBUM") "Album" else it.lowercase().replaceFirstChar(Char::uppercase) } ?: "Album", al.year.ifBlank { null }, al.primaryArtist?.name).joinToString(" · ")) { onNavigate("album/${al.id}") }
+                ResultRow(Catalog.cover(al.cover, 160), al.title, listOfNotNull(al.type?.let { if (it == "ALBUM") "Album" else it.lowercase().replaceFirstChar(Char::uppercase) } ?: "Album", al.year.ifBlank { null }, al.primaryArtist?.name).joinToString(" · ")) { use("album/${al.id}") }
             }
         }
         if ((tab == Tab.ALL || tab == Tab.PLAYLISTS) && res.playlists.isNotEmpty()) {
             item { SectionTitle("Playlists") }
             items(res.playlists.take(if (tab == Tab.PLAYLISTS) 40 else 4), key = { "pl${it.uuid}" }) { p ->
-                ResultRow(Catalog.playlistImage(p, 160), p.title, listOfNotNull("Playlist", p.creator?.name, p.numberOfTracks?.let { plural(it, "song") }).joinToString(" · ")) { onNavigate("playlist/${p.uuid}") }
+                ResultRow(Catalog.playlistImage(p, 160), p.title, listOfNotNull("Playlist", p.creator?.name, p.numberOfTracks?.let { plural(it, "song") }).joinToString(" · ")) { use("playlist/${p.uuid}") }
             }
         }
         item { Spacer(Modifier.height(160.dp)) }
@@ -229,8 +253,7 @@ private fun Results(term: String, tab: Tab, setTab: (Tab) -> Unit, onNavigate: (
 }
 
 @Composable
-private fun TopHit(hit: Hit, songs: List<Track>, term: String, onNavigate: (String) -> Unit) {
-    keep(songs, term)
+private fun TopHit(hit: Hit, onNavigate: (String) -> Unit, onUse: () -> Unit) {
     val (img, title, sub, round, route) = when (hit) {
         is Hit.ArtistHit -> Quint(Catalog.artistPicture(hit.artist.picture, 320), hit.artist.name, hit.artist.listeners?.let { "Artist · $it" } ?: "Artist", true, "artist/${hit.artist.id}")
         is Hit.AlbumHit -> Quint(Catalog.cover(hit.album.cover, 320), hit.album.title, "Album · ${hit.album.primaryArtist?.name ?: ""}", false, "album/${hit.album.id}")
@@ -239,7 +262,7 @@ private fun TopHit(hit: Hit, songs: List<Track>, term: String, onNavigate: (Stri
     }
     Row(
         Modifier.padding(horizontal = 16.dp).fillMaxWidth().clip(RoundedCornerShape(8.dp)).background(Aoide.elevated).clickable {
-            if (hit is Hit.TrackHit) PlayerController.playRadio(hit.track)
+            if (hit is Hit.TrackHit) { onUse(); PlayerController.playRadio(hit.track) }
             else if (route.isNotEmpty()) onNavigate(route)
         }.padding(16.dp).testTag("top_hit"),
         verticalAlignment = Alignment.CenterVertically,
@@ -266,9 +289,3 @@ private fun ResultRow(image: String?, title: String, subtitle: String, round: Bo
         }
     }
 }
-
-@Suppress("unused")
-private fun keep(m: Mood) = m
-
-@Suppress("unused_parameter")
-private fun keep(songs: List<Track>, term: String) = Unit

@@ -43,15 +43,22 @@ object Translate {
 
     private fun enc(s: String) = URLEncoder.encode(s, "UTF-8")
 
-    private fun get(url: String): String? = runCatching {
-        ApiClient.http.newCall(Request.Builder().url(url).header("User-Agent", UA).build()).execute().use { res -> if (res.isSuccessful) res.body?.string() else null }
-    }.getOrNull()
+    /** The body, or null with the status that refused it (0 for no answer at all). */
+    private fun fetch(url: String): Pair<String?, Int> = runCatching {
+        ApiClient.http.newCall(Request.Builder().url(url).header("User-Agent", UA).build()).execute().use { res -> (if (res.isSuccessful) res.body?.string() else null) to res.code }
+    }.getOrDefault(null to 0)
 
-    /** The endpoint the Google Translate website uses. Answers 429 to an address it has seen too much of; then it rests for an hour. */
+    private fun get(url: String): String? = fetch(url).first
+
+    /** The endpoint the Google Translate website uses. It answers 429 to an address it has seen too much of, and then it rests; a dropped connection is not that. */
     private fun gtx(text: String, to: String): String? {
         if (System.currentTimeMillis() < gtxBlockedUntil) return null
-        val body = get("https://translate.googleapis.com/translate_a/single?client=gtx&sl=auto&tl=$to&dt=t&q=${enc(text)}")
-        if (body == null) { gtxBlockedUntil = System.currentTimeMillis() + 3_600_000L; return null }
+        val (body, code) = fetch("https://translate.googleapis.com/translate_a/single?client=gtx&sl=auto&tl=$to&dt=t&q=${enc(text)}")
+        if (body == null) {
+            if (code == 429 || code == 403) gtxBlockedUntil = System.currentTimeMillis() + 3_600_000L
+            else if (code >= 500) gtxBlockedUntil = System.currentTimeMillis() + 60_000L
+            return null
+        }
         return runCatching { (json.parseToJsonElement(body).jsonArray[0] as JsonArray).joinToString("") { seg -> seg.jsonArray[0].jsonPrimitive.content } }.getOrNull()
     }
 

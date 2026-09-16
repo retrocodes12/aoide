@@ -27,6 +27,10 @@ import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.RingVolume
 import androidx.compose.material.icons.filled.Bedtime
 import androidx.compose.material.icons.filled.Radio
+import androidx.compose.material.icons.filled.PlaylistPlay
+import androidx.compose.material.icons.filled.History
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.foundation.layout.imePadding
 import androidx.compose.ui.platform.LocalContext
 import app.aoide.data.Downloads
 import androidx.compose.material3.HorizontalDivider
@@ -63,11 +67,18 @@ fun TrackMenuSheet(track: Track, onRemove: (() -> Unit)?, onNavigate: (String) -
     val liked = lib.isLiked(track.id)
     val downloads by Downloads.all.collectAsState()
     val kept = downloads[track.id]
+    val queue by Downloads.queue.collectAsState()
+    val downloading by Downloads.current.collectAsState()
+    val queued = queue.any { it.id == track.id } || downloading?.track?.id == track.id
+    val sleepMinutes by app.aoide.player.SleepTimer.remaining.collectAsState()
+    val sleepEnd by app.aoide.player.SleepTimer.endOfTrack.collectAsState()
+    val rest = AppUi.menuList?.let { l -> if (AppUi.menuIndex in l.indices) l else null }
+    val resume = app.aoide.player.Positions.saved(track)
     val context = LocalContext.current
     var pickPlaylist by remember { mutableStateOf(false) }
     var newName by remember { mutableStateOf("") }
     ModalBottomSheet(onDismissRequest = onDismiss, containerColor = Aoide.elevated2, scrimColor = SheetScrim, dragHandle = null, modifier = Modifier.testTag("track_menu")) {
-        Column(Modifier.verticalScroll(rememberScrollState()).navigationBarsPadding().padding(bottom = 16.dp)) {
+        Column(Modifier.verticalScroll(rememberScrollState()).imePadding().navigationBarsPadding().padding(bottom = 16.dp)) {
             Row(Modifier.padding(20.dp), verticalAlignment = Alignment.CenterVertically) {
                 Artwork(Catalog.cover(track.album?.cover, 160), Modifier.size(56.dp))
                 Spacer(Modifier.width(14.dp))
@@ -84,20 +95,29 @@ fun TrackMenuSheet(track: Track, onRemove: (() -> Unit)?, onNavigate: (String) -
                 MenuItem(Icons.Filled.PlaylistAdd, "Add to playlist") { pickPlaylist = true }
                 MenuItem(Icons.Filled.QueueMusic, "Add to queue") { PlayerController.enqueueLast(track); Toasts.show("Added to queue"); onDismiss() }
                 MenuItem(Icons.Filled.SkipNext, "Play next") { PlayerController.enqueueNext(track); Toasts.show("Playing next"); onDismiss() }
+                if (rest != null && AppUi.menuIndex < rest.lastIndex) {
+                    val after = PlayerController.queueFrom(rest, AppUi.menuIndex)
+                    MenuItem(Icons.Filled.PlaylistPlay, "Play from here", subtitle = "This song, then the ${app.aoide.ui.plural(after.size, "song")} after it") { PlayerController.playTracks(rest, AppUi.menuIndex, null); onDismiss() }
+                    MenuItem(Icons.Filled.QueueMusic, "Add the rest to the queue", subtitle = app.aoide.ui.plural(after.size + 1, "song")) { (listOf(track) + after).forEach(PlayerController::enqueueLast); Toasts.show("Added ${app.aoide.ui.plural(after.size + 1, "song")} to the queue"); onDismiss() }
+                }
+                if (resume != null) MenuItem(Icons.Filled.History, "Start over", subtitle = "Resumes from ${app.aoide.data.formatTime((resume.first / 1000).toInt())} otherwise") { app.aoide.player.Positions.forget(track); PlayerController.playTrack(track); onDismiss() }
                 if (!track.isLocal) MenuItem(Icons.Filled.Radio, "Start radio", subtitle = "Songs like this one, from the music service") { PlayerController.playRadio(track); onDismiss() }
                 if (!track.isLocal) {
                     if (kept != null) MenuItem(Icons.Filled.DownloadDone, "Remove download", subtitle = kept.label, tint = Aoide.accent) { Downloads.remove(track.id); Toasts.show("Download removed"); onDismiss() }
-                    else if (Downloads.isQueued(track.id)) MenuItem(Icons.Outlined.ArrowCircleDown, "Downloading…", subtitle = "In the queue") { Downloads.cancel(track.id); Toasts.show("Download cancelled"); onDismiss() }
+                    else if (queued) MenuItem(Icons.Outlined.ArrowCircleDown, "Downloading…", subtitle = "Tap to cancel") { Downloads.cancel(track.id); Toasts.show("Download cancelled"); onDismiss() }
                     else MenuItem(Icons.Outlined.ArrowCircleDown, "Download", subtitle = "Keep the full song on this phone") { Downloads.enqueue(listOf(track)); Toasts.show("Downloading ${track.title}"); onDismiss() }
                 }
                 MenuItem(Icons.Filled.Share, "Share") { app.aoide.ui.components.TrackActions.share(context, track); onDismiss() }
                 if (kept != null) MenuItem(Icons.Filled.RingVolume, "Set as ringtone") { Toasts.show(app.aoide.ui.components.TrackActions.setRingtone(context, kept)); onDismiss() }
-                MenuItem(Icons.Filled.Bedtime, "Sleep timer", subtitle = app.aoide.player.SleepTimer.label()) { onDismiss(); AppUi.sleepOpen = true }
+                MenuItem(Icons.Filled.Bedtime, "Sleep timer", subtitle = app.aoide.player.SleepTimer.short(sleepMinutes, sleepEnd)?.let { "Music stops: $it" }) { onDismiss(); AppUi.sleepOpen = true }
                 track.album?.let { a -> MenuItem(Icons.Filled.Album, "Go to album") { onNavigate("album/${a.id}"); onDismiss() } }
                 track.primaryArtist?.let { a -> MenuItem(Icons.Filled.Person, "Go to artist") { onNavigate("artist/${a.id}"); onDismiss() } }
-                if (onRemove != null) MenuItem(Icons.Filled.RemoveCircleOutline, "Remove from this playlist") { onRemove(); onDismiss() }
+                if (onRemove != null) MenuItem(Icons.Filled.RemoveCircleOutline, AppUi.menuRemoveLabel) { onRemove(); onDismiss() }
             } else {
-                Text("Add to playlist", style = MaterialTheme.typography.titleMedium, modifier = Modifier.padding(horizontal = 20.dp, vertical = 12.dp))
+                Row(Modifier.padding(horizontal = 8.dp, vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+                    androidx.compose.material3.IconButton(onClick = { pickPlaylist = false }, modifier = Modifier.testTag("playlist_back")) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back", tint = Aoide.fg) }
+                    Text("Add to playlist", style = MaterialTheme.typography.titleMedium)
+                }
                 lib.playlists.forEach { p ->
                     MenuItem(Icons.Filled.QueueMusic, p.title, subtitle = "${p.tracks.size} songs") {
                         Library.addToPlaylist(p.id, track); Toasts.show("Added to ${p.title}"); onDismiss()
@@ -128,6 +148,3 @@ private fun MenuItem(icon: ImageVector, text: String, subtitle: String? = null, 
         }
     }
 }
-
-/** Adds a ".remove" when a screen wants a row's ··· to offer removal. */
-fun AppUi.menuFor(track: Track) = openMenu(track)

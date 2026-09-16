@@ -77,7 +77,7 @@ fun rememberHaptics(): HapticFeedback = LocalHapticFeedback.current
 @Composable
 fun BoxScope.CollapsingBar(listState: LazyListState, title: String, tint: Tint, threshold: Dp, onBack: () -> Unit, trailing: @Composable RowScope.() -> Unit = {}) {
     val density = LocalDensity.current
-    val progress by remember(threshold) {
+    val progress by remember(threshold, density) {
         derivedStateOf {
             val px = with(density) { threshold.toPx() }
             if (listState.firstVisibleItemIndex > 0) 1f else (listState.firstVisibleItemScrollOffset / px).coerceIn(0f, 1f)

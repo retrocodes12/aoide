@@ -19,6 +19,7 @@ import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
@@ -35,7 +36,6 @@ import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -74,7 +74,6 @@ import app.aoide.ui.components.formatBytes
 import app.aoide.ui.plural
 import app.aoide.ui.rememberResource
 import app.aoide.ui.theme.Aoide
-import app.aoide.ui.theme.Tint
 
 /** Liked Songs' head with an icon tile instead of the heart: the shape every built-in collection shares. */
 @Composable
@@ -108,14 +107,13 @@ fun DownloadsScreen(onBack: () -> Unit) {
     val tracks = remember(all) { all.values.sortedByDescending { it.savedAt }.map { it.track } }
     val ctx = PlayContext("downloads", "Downloads", "downloads")
     val thisPlaying = player.context?.href == ctx.href && player.isPlaying
-    LaunchedEffect(Unit) { AppUi.page = Tint.from(Aoide.accent) }
     LazyColumn(Modifier.testTag("downloads_screen")) {
         item {
             IconHead(
                 Icons.Filled.Download, "Downloads", "${plural(tracks.size, "song")} · ${formatBytes(all.values.sumOf { it.bytes })} · plays with no connection at all",
                 thisPlaying, tracks.isNotEmpty(), onBack,
                 onPlay = { if (player.context?.href == ctx.href && player.index >= 0) PlayerController.toggle() else PlayerController.playTracks(tracks, 0, ctx) },
-                onShuffle = { if (!player.shuffle) PlayerController.toggleShuffle(); PlayerController.playTracks(tracks, tracks.indices.random(), ctx) },
+                onShuffle = { PlayerController.playTracks(tracks, tracks.indices.random(), ctx, shuffled = true) },
                 trailing = { if (tracks.isNotEmpty()) OutlinePill("Remove all") { AppUi.ask("Remove every download?", "Remove", "Frees ${formatBytes(all.values.sumOf { it.bytes })}. Songs stay in your library and play online.") { Downloads.removeAll(); Toasts.show("Downloads removed") } } },
             )
         }
@@ -160,8 +158,8 @@ fun DownloadsScreen(onBack: () -> Unit) {
         }
         if (tracks.isEmpty() && cur == null && queue.isEmpty()) item { EmptyState("Nothing saved yet", "Use ··· on any song, or the download arrow on an album or playlist.") }
         else if (tracks.isNotEmpty()) item { SectionTitle("Saved", Modifier.padding(top = 8.dp)) }
-        items(tracks, key = { it.id }) { t ->
-            TrackRow(t, subtitle = "${all[t.id]?.label ?: ""} · ${t.artistNames}", onClick = { PlayerController.playTracks(tracks, tracks.indexOf(t), ctx) })
+        itemsIndexed(tracks, key = { i, t -> "$i-${t.id}" }) { i, t ->
+            TrackRow(t, subtitle = listOfNotNull(all[t.id]?.label, t.artistNames.takeIf { it.isNotBlank() }).joinToString(" · "), onClick = { PlayerController.playTracks(tracks, i, ctx) }, list = tracks, index = i)
         }
         item { Spacer(Modifier.height(160.dp)) }
     }
@@ -180,24 +178,20 @@ fun LocalFilesScreen(onBack: () -> Unit) {
     val ctx = PlayContext("local", "On this phone", "local_files")
     val thisPlaying = player.context?.href == ctx.href && player.isPlaying
     val tracks: List<Track> = (scan as? Resource.Ready)?.value ?: emptyList()
-    LaunchedEffect(Unit) { AppUi.page = Tint.from(Aoide.accent) }
     LazyColumn(Modifier.testTag("local_files_screen")) {
         item {
             IconHead(
                 Icons.Filled.FolderOpen, "On this phone", if (granted) "${plural(tracks.size, "song")} found in your music folders" else "Aoide can play the music files already on this phone",
                 thisPlaying, tracks.isNotEmpty(), onBack,
                 onPlay = { if (player.context?.href == ctx.href && player.index >= 0) PlayerController.toggle() else PlayerController.playTracks(tracks, 0, ctx) },
-                onShuffle = { if (!player.shuffle) PlayerController.toggleShuffle(); PlayerController.playTracks(tracks, tracks.indices.random(), ctx) },
+                onShuffle = { PlayerController.playTracks(tracks, tracks.indices.random(), ctx, shuffled = true) },
                 trailing = { if (granted) OutlinePill("Rescan") { tick++ } },
             )
         }
         if (!granted) item { EmptyState("Allow access to your music", "Aoide only reads audio files; nothing is uploaded anywhere.", action = { PillButton("Allow", Icons.Filled.FolderOpen, filled = true, modifier = Modifier.testTag("allow_media")) { ask.launch(permission) } }) }
         else if (scan is Resource.Loading) item { Text("Scanning…", color = Aoide.subdued, modifier = Modifier.padding(16.dp)) }
         else if (tracks.isEmpty()) item { EmptyState("No music files found", "Songs longer than 30 seconds in your Music or Download folders show up here.") }
-        items(tracks, key = { it.id }) { t -> TrackRow(t, subtitle = listOfNotNull(t.artistNames.takeIf { it.isNotBlank() }, t.album?.title?.takeIf { it.isNotBlank() }).joinToString(" · "), onClick = { PlayerController.playTracks(tracks, tracks.indexOf(t), ctx) }) }
+        itemsIndexed(tracks, key = { i, t -> "$i-${t.id}" }) { i, t -> TrackRow(t, subtitle = listOfNotNull(t.artistNames.takeIf { it.isNotBlank() }, t.album?.title?.takeIf { it.isNotBlank() }).joinToString(" · "), onClick = { PlayerController.playTracks(tracks, i, ctx) }, list = tracks, index = i) }
         item { Spacer(Modifier.height(160.dp)) }
     }
 }
-
-@Suppress("unused")
-private val keepColor = Color.Transparent

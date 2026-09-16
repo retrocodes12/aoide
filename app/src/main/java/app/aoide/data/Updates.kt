@@ -3,7 +3,6 @@ package app.aoide.data
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
-import android.os.Build
 import android.provider.Settings
 import androidx.core.content.FileProvider
 import app.aoide.BuildConfig
@@ -167,7 +166,7 @@ object Updates {
 
     /** Hand the APK to the system installer. Returns false, after opening the right settings page, when Aoide may not install apps yet. */
     fun install(context: Context, file: File): Boolean {
-        if (Build.VERSION.SDK_INT >= 26 && !context.packageManager.canRequestPackageInstalls()) {
+        if (!context.packageManager.canRequestPackageInstalls()) {
             runCatching { context.startActivity(Intent(Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES, Uri.parse("package:${context.packageName}")).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) }
             return false
         }

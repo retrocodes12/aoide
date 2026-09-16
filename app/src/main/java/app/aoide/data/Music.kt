@@ -16,6 +16,7 @@ import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
 import java.io.IOException
+import kotlinx.coroutines.launch
 import java.util.Locale
 import java.util.concurrent.ConcurrentHashMap
 
@@ -101,6 +102,10 @@ object Music {
     @Volatile private var visitorAt = 0L
     /** Clients whose URLs were caught stopping short, benched for half an hour. */
     private val benched = ConcurrentHashMap<String, Long>()
+    /** Clients whose file was read to its end recently: the tail check is skipped for them until this expires. */
+    private val trusted = ConcurrentHashMap<String, Long>()
+    private val scope = kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.SupervisorJob() + Dispatchers.IO)
+    @Volatile private var refreshing = false
     /** Catalogue answers are memoised for fifteen minutes; pages are heavy and the same one is asked for again and again. */
     private data class Entry(val at: Long, val body: JsonObject)
     private val cache = LinkedHashMap<String, Entry>()
@@ -128,6 +133,7 @@ object Music {
     suspend fun search(query: String, params: String? = null): JsonObject = call("search") { put("query", query); params?.let { put("params", it) } }
     suspend fun browse(browseId: String, params: String? = null): JsonObject = call("browse") { put("browseId", browseId); params?.let { put("params", it) } }
     suspend fun continuation(token: String): JsonObject = call("browse") { put("continuation", token) }
+    suspend fun suggestions(input: String): JsonObject = call("music/get_search_suggestions") { put("input", input) }
     /** The service's own queue for a song or a playlist: its radio when [playlistId] is `RDAMVM` + the video id. */
     suspend fun next(videoId: String?, playlistId: String?): JsonObject = call("next") {
         videoId?.let { put("videoId", it) }
@@ -161,7 +167,9 @@ object Music {
             val key = client.name + "/" + client.version
             if ((benched[key] ?: 0L) > System.currentTimeMillis()) continue
             val s = try { player(client, videoId, vd, quality) } catch (e: IOException) { null } ?: continue
-            if (servesWholeFile(s, client)) return@withContext s
+            // A client that served one whole file serves the next; the extra round trip is only paid when it is unproven.
+            if ((trusted[key] ?: 0L) > System.currentTimeMillis()) return@withContext s
+            if (servesWholeFile(s, client)) { trusted[key] = System.currentTimeMillis() + 30 * 60_000L; return@withContext s }
             benched[key] = System.currentTimeMillis() + 30 * 60_000L
         }
         null
@@ -265,19 +273,30 @@ object Music {
 
     /* ---------- plumbing ---------- */
 
-    /** The client list, refreshed from the repo every 12 hours; the last good copy survives restarts. */
+    /**
+     * The client list. The stored copy is used from the first call; a refresh from the repo runs in the
+     * background every 12 hours, never on the caller's path, so a blocked address for the repo cannot
+     * stall the first search of a launch.
+     */
     private fun clients(): List<Client> {
         val now = System.currentTimeMillis()
-        if (now - configAt > 12 * 3_600_000L) {
-            configAt = now
-            val fresh = runCatching {
-                ApiClient.http.newCall(Request.Builder().url(CONFIG_URL).build()).execute().use { r -> if (r.isSuccessful) r.body?.string() else null }
-            }.getOrNull()
-            val text = fresh ?: if (Prefs.isReady()) Prefs.getString("yt_config") else null
-            val parsed = text?.let { t -> runCatching { json.decodeFromString<Config>(t) }.getOrNull() }?.takeIf { it.clients.isNotEmpty() }
-            if (parsed != null) {
-                config = parsed
-                if (fresh != null && Prefs.isReady()) Prefs.putString("yt_config", fresh)
+        if (configAt == 0L) {
+            configAt = 1L
+            Prefs.getString("yt_config")?.let { t -> runCatching { json.decodeFromString<Config>(t) }.getOrNull() }?.takeIf { it.clients.isNotEmpty() }?.let { config = it }
+        }
+        if (now - configAt > 12 * 3_600_000L && !refreshing) {
+            refreshing = true
+            scope.launch {
+                val fresh = runCatching {
+                    ApiClient.http.newCall(Request.Builder().url(CONFIG_URL).build()).execute().use { r -> if (r.isSuccessful) r.body?.string() else null }
+                }.getOrNull()
+                val parsed = fresh?.let { t -> runCatching { json.decodeFromString<Config>(t) }.getOrNull() }?.takeIf { it.clients.isNotEmpty() }
+                if (parsed != null) {
+                    config = parsed
+                    Prefs.putString("yt_config", fresh)
+                    configAt = System.currentTimeMillis()
+                } else configAt = System.currentTimeMillis() - 11 * 3_600_000L // try again in an hour
+                refreshing = false
             }
         }
         return config.clients
@@ -312,6 +331,7 @@ object Music {
     /** Test seam: forget benches and memoised pages so a test starts clean. */
     fun resetForTest() {
         benched.clear()
+        trusted.clear()
         synchronized(cache) { cache.clear() }
     }
 }

@@ -50,6 +50,19 @@ object AudioEffects {
         apply()
     }
 
+    /** A band while its slider is still moving: the effect follows the finger, nothing is written until it lets go. */
+    fun previewBand(i: Int, db: Int) {
+        val b = _state.value.bands.toMutableList()
+        if (i in b.indices) b[i] = db.coerceIn(-15, 15)
+        _state.value = _state.value.copy(bands = b, preset = "Custom")
+        apply()
+    }
+
+    fun previewBass(v: Int) {
+        _state.value = _state.value.copy(bass = v.coerceIn(0, 100))
+        apply()
+    }
+
     fun setBand(i: Int, db: Int) {
         val b = _state.value.bands.toMutableList()
         if (i in b.indices) b[i] = db

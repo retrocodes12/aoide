@@ -10,6 +10,7 @@ import app.aoide.data.Quality
 import app.aoide.data.Track
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.update
 import java.util.concurrent.ConcurrentHashMap
 
 /** What we learned about a track's stream when it was resolved. The UI shows it in the player. */
@@ -51,7 +52,7 @@ object StreamResolver {
 
     suspend fun resolve(trackId: String, quality: Quality): Resolved {
         // A song kept on the phone never touches the network, whatever was cached before it was saved.
-        Downloads.get(trackId)?.let { d -> return fromDownload(d).also { _infos.value = _infos.value + (trackId to it.info) } }
+        Downloads.get(trackId)?.let { d -> return fromDownload(d).also { _infos.update { m -> m + (trackId to it.info) } } }
         val key = "$trackId:${quality.name}"
         synchronized(cache) { cache[key]?.let { if (System.currentTimeMillis() - it.at < TTL_MS) return it.value else cache.remove(key) } }
         val r = fresh(trackId, quality)
@@ -59,7 +60,7 @@ object StreamResolver {
             if (cache.size >= 200) cache.remove(cache.keys.first())
             cache[key] = Cached(System.currentTimeMillis(), r)
         }
-        _infos.value = _infos.value + (trackId to r.info)
+        _infos.update { m -> m + (trackId to r.info) }
         return r
     }
 
@@ -86,8 +87,8 @@ object StreamResolver {
     fun forget(trackId: String) = synchronized(cache) { cache.keys.removeAll { it.startsWith("$trackId:") } }
 
     /** Record what a song is playing as, for paths that never reach the resolver (a kept file, the second source). */
-    fun note(info: StreamInfo) { _infos.value = _infos.value + (info.trackId to info) }
+    fun note(info: StreamInfo) { _infos.update { m -> m + (info.trackId to info) } }
 
     /** Test seam: lets a screenshot test show a stream badge without resolving a stream. */
-    fun setInfoForTest(info: StreamInfo) { _infos.value = _infos.value + (info.trackId to info) }
+    fun setInfoForTest(info: StreamInfo) = note(info)
 }

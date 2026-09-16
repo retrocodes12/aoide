@@ -12,13 +12,13 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.History
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -41,7 +41,6 @@ import app.aoide.ui.components.OutlinePill
 import app.aoide.ui.components.TrackRow
 import app.aoide.ui.plural
 import app.aoide.ui.theme.Aoide
-import app.aoide.ui.theme.Tint
 import java.text.DateFormat
 import java.util.Date
 
@@ -61,14 +60,13 @@ fun HistoryScreen(onBack: () -> Unit) {
         recent.groupBy { it.primaryArtist?.name ?: "" }.mapValues { (_, ts) -> ts.sumOf { lib.plays[it.id] ?: 1 } }.filterKeys { it.isNotBlank() }.maxByOrNull { it.value }?.key
     }
     val minutes = remember(lib.plays, recent) { recent.sumOf { (lib.plays[it.id] ?: 1) * it.duration } / 60 }
-    LaunchedEffect(Unit) { AppUi.page = Tint.from(Aoide.accent) }
     LazyColumn(Modifier.testTag("history_screen")) {
         item {
             IconHead(
                 Icons.Filled.History, "History", "${plural(totalPlays, "play")} · ${plural(lib.plays.size, "song")} · stays on this phone",
                 thisPlaying, list.isNotEmpty(), onBack,
                 onPlay = { if (player.context?.href == ctx.href && player.index >= 0) PlayerController.toggle() else PlayerController.playTracks(list, 0, ctx) },
-                onShuffle = { if (!player.shuffle) PlayerController.toggleShuffle(); PlayerController.playTracks(list, list.indices.random(), ctx) },
+                onShuffle = { PlayerController.playTracks(list, list.indices.random(), ctx, shuffled = true) },
                 trailing = { if (recent.isNotEmpty()) OutlinePill("Clear") { AppUi.ask("Clear your history?", "Clear", "Recently played, play counts and the stats below are wiped. Liked songs and playlists stay.") { Library.clearHistory(); Toasts.show("History cleared") } } },
             )
         }
@@ -85,11 +83,11 @@ fun HistoryScreen(onBack: () -> Unit) {
             }
         }
         if (list.isEmpty()) item { EmptyState(if (mostPlayed) "Nothing played twice yet" else "Nothing played yet", "Every song you play is noted here, on this phone only.") }
-        items(list, key = { it.id }) { t ->
+        itemsIndexed(list, key = { i, t -> "$i-${t.id}" }) { i, t ->
             val count = lib.plays[t.id] ?: 1
             val at = lib.playedAt[t.id]
             val sub = if (mostPlayed) "${plural(count, "play")} · ${t.artistNames}" else (at?.let { DateFormat.getDateTimeInstance(DateFormat.SHORT, DateFormat.SHORT).format(Date(it)) + " · " } ?: "") + t.artistNames
-            TrackRow(t, subtitle = sub, onClick = { PlayerController.playTracks(list, list.indexOf(t), ctx) })
+            TrackRow(t, subtitle = sub, onClick = { PlayerController.playTracks(list, i, ctx) }, list = list, index = i)
         }
         item { Spacer(Modifier.height(160.dp)) }
     }
@@ -98,7 +96,7 @@ fun HistoryScreen(onBack: () -> Unit) {
 @Composable
 private fun Stat(value: String, label: String, modifier: Modifier) {
     Column(modifier.clip(RoundedCornerShape(10.dp)).background(Aoide.highlight).padding(horizontal = 12.dp, vertical = 10.dp)) {
-        Text(value, style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.ExtraBold), maxLines = 1)
+        Text(value, style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.ExtraBold), maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
         Text(label, style = MaterialTheme.typography.bodySmall, color = Aoide.subdued)
     }
 }

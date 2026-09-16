@@ -21,6 +21,7 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -37,6 +38,9 @@ class PlayerExtras(context: Context, private val exo: ExoPlayer) : Player.Listen
     private var mutedPause = false
     private var noisyPause = false
     private var autoplayedFrom = ""
+    /** Bumped by every event that could make the quarter-second loop necessary again. */
+    private val poke = kotlinx.coroutines.flow.MutableStateFlow(0)
+    private fun wake() { poke.value = poke.value + 1 }
     private val audio = context.getSystemService(Context.AUDIO_SERVICE) as AudioManager
     private val devices = object : AudioDeviceCallback() {
         override fun onAudioDevicesAdded(added: Array<out AudioDeviceInfo>) {
@@ -53,7 +57,18 @@ class PlayerExtras(context: Context, private val exo: ExoPlayer) : Player.Listen
         scope.launch { Prefs.speed.collect { exo.setPlaybackSpeed(it.coerceIn(0.5f, 2f)) } }
         runCatching { audio.registerAudioDeviceCallback(devices, Handler(Looper.getMainLooper())) }
         if (exo.audioSessionId != C.AUDIO_SESSION_ID_UNSET) AudioEffects.attach(exo.audioSessionId)
-        scope.launch { while (isActive) { runCatching { tick() }; delay(250) } }
+        scope.launch { SleepTimer.endAt.collect { wake() } }
+        scope.launch { SleepTimer.endOfTrack.collect { wake() } }
+        scope.launch { Prefs.pauseOnMute.value.collect { wake() } }
+        // The loop runs only while there is something to watch: a song playing, a timer set, or a pause that a
+        // muted volume caused. Paused with nothing pending, the service sleeps instead of waking four times a second.
+        scope.launch {
+            while (isActive) {
+                val seen = poke.value
+                if (exo.playWhenReady || SleepTimer.isSet || mutedPause) { runCatching { tick() }; delay(250) }
+                else poke.first { it != seen }
+            }
+        }
     }
 
     fun stop() {
@@ -104,7 +119,12 @@ class PlayerExtras(context: Context, private val exo: ExoPlayer) : Player.Listen
     /* ---------- the quarter-second tick ---------- */
 
     private fun tick() {
-        SleepTimer.endAt.value?.let { end -> if (System.currentTimeMillis() >= end) { SleepTimer.cancel(); pause() } }
+        SleepTimer.endAt.value?.let { end ->
+            val left = end - System.currentTimeMillis()
+            if (left <= 0) { SleepTimer.cancel(); exo.pause(); exo.volume = 1f; return }
+            // The last twenty seconds of a sleep timer drift down rather than stop dead.
+            if (left < SLEEP_FADE_MS && exo.isPlaying && fadeJob?.isActive != true) { exo.volume = (left.toFloat() / SLEEP_FADE_MS).coerceIn(0.02f, 1f); return }
+        }
         if (Prefs.pauseOnMute.on) {
             val muted = audio.getStreamVolume(AudioManager.STREAM_MUSIC) == 0
             if (muted && exo.isPlaying) { mutedPause = true; exo.pause() }
@@ -143,7 +163,10 @@ class PlayerExtras(context: Context, private val exo: ExoPlayer) : Player.Listen
     override fun onPlayWhenReadyChanged(playWhenReady: Boolean, reason: Int) {
         if (!playWhenReady && reason == Player.PLAY_WHEN_READY_CHANGE_REASON_AUDIO_BECOMING_NOISY) noisyPause = true
         if (playWhenReady) noisyPause = false
+        wake()
     }
+
+    override fun onIsPlayingChanged(isPlaying: Boolean) = wake()
 
     override fun onAudioSessionIdChanged(audioSessionId: Int) = AudioEffects.attach(audioSessionId)
 
@@ -165,6 +188,7 @@ class PlayerExtras(context: Context, private val exo: ExoPlayer) : Player.Listen
     }
 
     private companion object {
+        const val SLEEP_FADE_MS = 20_000L
         val HEADSETS = setOf(AudioDeviceInfo.TYPE_BLUETOOTH_A2DP, AudioDeviceInfo.TYPE_WIRED_HEADSET, AudioDeviceInfo.TYPE_WIRED_HEADPHONES, AudioDeviceInfo.TYPE_USB_HEADSET, 26 /* BLE headset */)
     }
 }

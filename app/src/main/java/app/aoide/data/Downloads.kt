@@ -7,8 +7,11 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.async
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.encodeToString
@@ -65,10 +68,11 @@ object Downloads {
         appContext = context.applicationContext
         dir = File(context.filesDir, "downloads").apply { mkdirs() }
         indexFile = File(context.filesDir, "downloads.json")
-        if (indexFile.exists()) runCatching {
-            val list = json.decodeFromString<List<Download>>(indexFile.readText())
+        Store.read(indexFile) { json.decodeFromString<List<Download>>(it) }?.let { list ->
             _all.value = list.filter { File(it.file).exists() }.associateBy { it.track.id }
         }
+        // Attempts that died mid-way leave `.part` files behind; they are worth nothing now.
+        dir.listFiles { f -> f.name.endsWith(".part") }?.forEach { it.delete() }
     }
 
     fun has(trackId: String): Boolean = _all.value.containsKey(trackId)
@@ -80,26 +84,39 @@ object Downloads {
     fun enqueue(tracks: List<Track>) {
         val fresh = tracks.filter { !it.isLocal && !has(it.id) && !isQueued(it.id) }.distinctBy { it.id }
         if (fresh.isEmpty()) return
-        _queue.value = _queue.value + fresh
-        _failed.value = _failed.value - fresh.map { it.id }.toSet()
+        _queue.update { it + fresh }
+        _failed.update { it - fresh.map { t -> t.id }.toSet() }
         start()
     }
 
+    /** Drop a waiting song, or stop the one coming down right now and throw its partial file away. */
     fun cancel(trackId: String) {
-        _queue.value = _queue.value.filter { it.id != trackId }
+        _queue.update { q -> q.filter { it.id != trackId } }
+        if (_current.value?.track?.id == trackId) fetchJob?.cancel()
     }
 
     fun remove(trackId: String) {
-        _all.value[trackId]?.let { runCatching { File(it.file).delete() } }
-        _all.value = _all.value - trackId
-        persist()
+        val d = _all.value[trackId] ?: return
+        _all.update { it - trackId }
+        // The song may be playing from this very file: move it back onto the stream before the file goes.
+        app.aoide.player.PlayerController.onDownloadRemoved(trackId)
+        scope.launch {
+            runCatching { File(d.file).delete() }
+            persist()
+        }
     }
 
     fun removeAll() {
-        _all.value.values.forEach { runCatching { File(it.file).delete() } }
+        val gone = _all.value.values.toList()
         _all.value = emptyMap()
-        persist()
+        gone.forEach { app.aoide.player.PlayerController.onDownloadRemoved(it.track.id) }
+        scope.launch {
+            gone.forEach { runCatching { File(it.file).delete() } }
+            persist()
+        }
     }
+
+    private var fetchJob: Job? = null
 
     private fun start() {
         if (worker?.isActive == true) return
@@ -109,13 +126,20 @@ object Downloads {
                 val next = _queue.value.firstOrNull() ?: break
                 // Current is set before the queue shrinks, so the service never sees both empty mid-way.
                 _current.value = DownloadProgress(next, 0f)
-                _queue.value = _queue.value.drop(1)
+                _queue.update { it.drop(1) }
+                // Each song runs as its own job so a cancel stops this one without ending the worker.
+                val job = async { fetch(next) }
+                fetchJob = job
                 try {
-                    fetch(next)
+                    job.await()
                 } catch (e: CancellationException) {
-                    throw e
+                    // Only this song was cancelled; the worker itself goes on unless it was the one cancelled.
+                    if (!isActive) throw e
                 } catch (e: Exception) {
-                    _failed.value = _failed.value + (next.id to (e.message ?: "Download failed"))
+                    _failed.update { it + (next.id to (e.message ?: "Download failed")) }
+                } finally {
+                    fetchJob = null
+                    File(dir, "${next.id}.part").delete()
                 }
                 _current.value = null
             }
@@ -138,19 +162,24 @@ object Downloads {
         val total = s.contentLength
         val chunk = 1L shl 20
         var offset = 0L
-        tmp.outputStream().use { out ->
-            while (offset < total) {
-                val end = minOf(offset + chunk, total) - 1
-                val req = Request.Builder().url(s.url).header("User-Agent", ua).header("Range", "bytes=$offset-$end").build()
-                val whole = ApiClient.http.newCall(req).execute().use { res ->
-                    if (res.code != 206 && res.code != 200) throw ApiException(res.code, "stream ${res.code}")
-                    (res.body ?: throw IllegalStateException("empty stream")).byteStream().copyTo(out)
-                    res.code == 200
+        try {
+            tmp.outputStream().use { out ->
+                while (offset < total) {
+                    val end = minOf(offset + chunk, total) - 1
+                    val req = Request.Builder().url(s.url).header("User-Agent", ua).header("Range", "bytes=$offset-$end").build()
+                    val whole = ApiClient.http.newCall(req).execute().use { res ->
+                        if (res.code != 206 && res.code != 200) throw ApiException(res.code, "stream ${res.code}")
+                        (res.body ?: throw IllegalStateException("empty stream")).byteStream().copyTo(out)
+                        res.code == 200
+                    }
+                    if (whole) break
+                    offset = end + 1
+                    _current.value = DownloadProgress(t, (offset.toFloat() / total).coerceIn(0f, 1f))
                 }
-                if (whole) break
-                offset = end + 1
-                _current.value = DownloadProgress(t, (offset.toFloat() / total).coerceIn(0f, 1f))
             }
+        } catch (e: Throwable) {
+            tmp.delete()
+            throw e
         }
         if (s.contentLength > 0 && tmp.length() != s.contentLength) {
             tmp.delete()
@@ -159,7 +188,7 @@ object Downloads {
         if (out.exists()) out.delete()
         tmp.renameTo(out)
         val d = Download(t, out.absolutePath, out.length(), s.mimeType, s.codecs, s.averageBitrate, s.durationMs, s.initRange.first, s.initRange.last, s.indexRange.first, s.indexRange.last, s.sampleRate, s.channels, System.currentTimeMillis())
-        _all.value = _all.value + (t.id to d)
+        _all.update { it + (t.id to d) }
         persist()
     }
 
@@ -168,34 +197,44 @@ object Downloads {
         val out = File(dir, "${t.id}.m4a")
         val tmp = File(dir, "${t.id}.part")
         var total = 0L
-        ApiClient.http.newCall(Request.Builder().url(url).header("User-Agent", ApiClient.UA).build()).execute().use { res ->
-            if (!res.isSuccessful) throw ApiException(res.code, "The second source answered ${res.code}")
-            val body = res.body ?: throw IllegalStateException("empty stream")
-            total = body.contentLength()
-            body.byteStream().use { input ->
-                tmp.outputStream().use { o ->
-                    val buf = ByteArray(64 * 1024)
-                    var done = 0L
-                    while (true) {
-                        val n = input.read(buf)
-                        if (n < 0) break
-                        o.write(buf, 0, n)
-                        done += n
-                        if (total > 0) _current.value = DownloadProgress(t, (done.toFloat() / total).coerceIn(0f, 1f))
+        try {
+            ApiClient.http.newCall(Request.Builder().url(url).header("User-Agent", ApiClient.UA).build()).execute().use { res ->
+                if (!res.isSuccessful) throw ApiException(res.code, "The second source answered ${res.code}")
+                val body = res.body ?: throw IllegalStateException("empty stream")
+                total = body.contentLength()
+                body.byteStream().use { input ->
+                    tmp.outputStream().use { o ->
+                        val buf = ByteArray(64 * 1024)
+                        var done = 0L
+                        var lastPct = -1
+                        while (true) {
+                            val n = input.read(buf)
+                            if (n < 0) break
+                            o.write(buf, 0, n)
+                            done += n
+                            // One emission per percent, not one per 64 KB: the notification is rebuilt for each.
+                            val pct = if (total > 0) (done * 100 / total).toInt() else -1
+                            if (pct != lastPct) { lastPct = pct; _current.value = DownloadProgress(t, (pct / 100f).coerceIn(0f, 1f)) }
+                        }
                     }
                 }
             }
+        } catch (e: Throwable) {
+            tmp.delete()
+            throw e
         }
         if (tmp.length() <= 0L) { tmp.delete(); throw IllegalStateException("The file came back empty") }
+        // A connection that dropped part-way leaves a short file; it must never become the offline copy.
+        if (total > 0 && tmp.length() != total) { tmp.delete(); throw IllegalStateException("The file stopped short") }
         if (out.exists()) out.delete()
         tmp.renameTo(out)
         val d = Download(t, out.absolutePath, out.length(), "audio/mp4", "mp4a.40.2", HiRate.KBPS * 1000, t.duration * 1000L, 0L, 0L, 0L, 0L, 44_100, 2, System.currentTimeMillis(), progressive = true)
-        _all.value = _all.value + (t.id to d)
+        _all.update { it + (t.id to d) }
         persist()
     }
 
     private fun persist() {
-        runCatching { indexFile.writeText(json.encodeToString(_all.value.values.toList())) }
+        runCatching { Store.writeAtomic(indexFile, json.encodeToString(_all.value.values.toList())) }
     }
 
     /** A DASH manifest for a kept file, so offline songs ride the player's normal path. */

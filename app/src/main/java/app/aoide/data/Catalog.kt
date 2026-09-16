@@ -68,6 +68,13 @@ object Catalog {
         }
     }
 
+    /** What the service would complete a few typed letters to; empty when it has nothing. */
+    suspend fun suggest(prefix: String): List<String> {
+        if (prefix.isBlank()) return emptyList()
+        val d = Music.suggestions(prefix)
+        return Parse.all(d, "searchSuggestionRenderer").mapNotNull { r -> runs(obj(r)?.get("suggestion")).trim().ifBlank { null } }.distinct().take(8)
+    }
+
     /* ---------- pages ---------- */
 
     suspend fun album(id: String): AlbumPage {
@@ -142,14 +149,17 @@ object Catalog {
         )
         val shelf = obj(first(d, "musicPlaylistShelfRenderer")) ?: obj(first(d, "musicShelfRenderer"))
         val tracks = ArrayList<Track>()
+        val seen = HashSet<String>()
         var items = arr(shelf?.get("contents")).orEmpty()
         var pages = 0
+        val want = p.numberOfTracks ?: Int.MAX_VALUE
         while (true) {
             val before = tracks.size
-            items.forEach { it -> obj(obj(it)?.get("musicResponsiveListItemRenderer"))?.let { r -> Parse.trackFromRow(r)?.let { t -> if (tracks.none { it.id == t.id }) tracks.add(t) } } }
+            items.forEach { it -> obj(obj(it)?.get("musicResponsiveListItemRenderer"))?.let { r -> Parse.trackFromRow(r)?.let { t -> if (seen.add(t.id)) tracks.add(t) } } }
             val token = items.lastOrNull()?.let { str(obj(first(obj(it)?.get("continuationItemRenderer"), "continuationCommand")), "token") }
             // The service sometimes answers a continuation with the same page again; stop when nothing new arrives.
-            if (token == null || (pages > 0 && tracks.size == before) || ++pages > 4) break
+            // Paging goes on until the header's count is reached, with a hard stop far above any real list.
+            if (token == null || (pages > 0 && tracks.size == before) || tracks.size >= want || ++pages > 40) break
             val more = runCatching { Music.continuation(token) }.getOrNull() ?: break
             items = arr(obj(first(more, "appendContinuationItemsAction"))?.get("continuationItems")) ?: arr(obj(first(more, "musicPlaylistShelfContinuation"))?.get("contents")) ?: break
         }

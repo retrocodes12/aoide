@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- The library, playlists and settings are worth carrying to a new phone; downloaded audio and per-song lookup answers are not. -->
+<full-backup-content>
+    <exclude domain="file" path="downloads/" />
+    <exclude domain="file" path="downloads.json" />
+    <exclude domain="file" path="downloads.json.bak" />
+    <exclude domain="sharedpref" path="aoide_answers.xml" />
+    <exclude domain="file" path="session.json" />
+    <exclude domain="file" path="session.json.bak" />
+</full-backup-content>

@@ -10,7 +10,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material3.Icon
@@ -146,9 +146,9 @@ fun ImportScreen(initialLink: String?, onBack: () -> Unit, onNavigate: (String) 
                     }
                 }
                 if (r.matched.isNotEmpty()) item { SectionTitle("Found", Modifier.padding(top = 8.dp)) }
-                items(r.matched, key = { it.id }) { t -> TrackRow(t, onClick = { PlayerController.playTracks(r.matched, r.matched.indexOf(t), PlayContext("playlist", r.title)) }) }
+                itemsIndexed(r.matched, key = { i, t -> "$i-${t.id}" }) { i, t -> TrackRow(t, onClick = { PlayerController.playTracks(r.matched, i, PlayContext("playlist", r.title)) }, list = r.matched, index = i) }
                 if (r.missed.isNotEmpty()) item { SectionTitle("Not found", Modifier.padding(top = 8.dp)) }
-                items(r.missed, key = { "${it.title}|${it.artists}" }) { m ->
+                itemsIndexed(r.missed, key = { i, m -> "$i|${m.title}|${m.artists}" }) { _, m ->
                     Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp).testTag("import_missed")) {
                         Text(m.title, style = MaterialTheme.typography.bodyLarge, color = Aoide.subdued, maxLines = 1, overflow = TextOverflow.Ellipsis)
                         Text(m.artists, style = MaterialTheme.typography.bodyMedium, color = Aoide.muted, maxLines = 1, overflow = TextOverflow.Ellipsis)

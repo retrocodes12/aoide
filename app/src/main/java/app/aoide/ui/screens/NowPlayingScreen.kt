@@ -32,6 +32,9 @@ import androidx.compose.animation.core.spring
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectVerticalDragGestures
+import androidx.compose.foundation.combinedClickable
+import androidx.compose.ui.input.nestedscroll.nestedScroll
+import kotlinx.coroutines.launch
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -139,46 +142,74 @@ import kotlin.math.roundToInt
 
 /**
  * Full-screen player. Apple Music's stage: the artwork blurred and darkened behind everything,
- * the cover large with a deep shadow and shrinking on pause, a lossless badge under the title.
+ * the cover large with a deep shadow and shrinking on pause, a quality badge under the title.
  * Spotify's furniture: the white play disc, orange for shuffle/repeat, the lyrics card below.
- * Pull down from the top half to dismiss; the sheet follows the finger.
+ * Pull down anywhere while the page is at its top to dismiss; the sheet follows the finger and
+ * springs back if let go early.
  */
 @Composable
 fun NowPlayingScreen(tint: Tint, onNavigate: (String) -> Unit) {
     val s by PlayerController.state.collectAsState()
+    val positionMs by PlayerController.position.collectAsState()
     val infos by StreamResolver.infos.collectAsState()
     val t = s.current ?: return
     val info = infos[t.id]
     val failed = s.status == Status.ERROR
     BackHandler { AppUi.nowPlayingOpen = false }
-    var drag by remember { mutableStateOf(0f) }
+    val drag = remember { androidx.compose.animation.core.Animatable(0f) }
+    val scope = androidx.compose.runtime.rememberCoroutineScope()
+    val scroll = rememberScrollState()
+    // The dismiss shares the drag with the page's own scroll: a downward pull is taken only while the
+    // page sits at its top, and once the sheet has moved it keeps the gesture until the finger lifts.
+    val dismiss = remember {
+        object : androidx.compose.ui.input.nestedscroll.NestedScrollConnection {
+            override fun onPreScroll(available: androidx.compose.ui.geometry.Offset, source: androidx.compose.ui.input.nestedscroll.NestedScrollSource): androidx.compose.ui.geometry.Offset {
+                if (source != androidx.compose.ui.input.nestedscroll.NestedScrollSource.UserInput) return androidx.compose.ui.geometry.Offset.Zero
+                val dy = available.y
+                if (dy < 0 && drag.value > 0f) { val take = maxOf(dy, -drag.value); scope.launch { drag.snapTo(drag.value + take) }; return androidx.compose.ui.geometry.Offset(0f, take) }
+                return androidx.compose.ui.geometry.Offset.Zero
+            }
+            override fun onPostScroll(consumed: androidx.compose.ui.geometry.Offset, available: androidx.compose.ui.geometry.Offset, source: androidx.compose.ui.input.nestedscroll.NestedScrollSource): androidx.compose.ui.geometry.Offset {
+                if (source != androidx.compose.ui.input.nestedscroll.NestedScrollSource.UserInput || available.y <= 0f) return androidx.compose.ui.geometry.Offset.Zero
+                scope.launch { drag.snapTo(drag.value + available.y) }
+                return androidx.compose.ui.geometry.Offset(0f, available.y)
+            }
+            override suspend fun onPreFling(available: androidx.compose.ui.unit.Velocity): androidx.compose.ui.unit.Velocity {
+                if (drag.value <= 0f) return androidx.compose.ui.unit.Velocity.Zero
+                if (drag.value > 160f || available.y > 1200f) { AppUi.nowPlayingOpen = false; drag.snapTo(0f) }
+                else drag.animateTo(0f, spring(dampingRatio = 0.8f, stiffness = 600f))
+                return available
+            }
+        }
+    }
     val lyrics by rememberResource("lyrics", t.id) { Catalog.lyrics(t) }
     val artScale by animateFloatAsState(if (s.isPlaying) 1f else 0.8f, spring(dampingRatio = 0.68f, stiffness = 260f), label = "art")
     val art = Catalog.cover(t.album?.cover, 640)
     val haptics = rememberHaptics()
     // The cover is a pager over the queue: swipe it to skip, and it follows along when a song ends.
     val pager = rememberPagerState(initialPage = s.index.coerceAtLeast(0)) { s.queue.size.coerceAtLeast(1) }
-    LaunchedEffect(s.index) { if (s.index >= 0 && pager.currentPage != s.index && !pager.isScrollInProgress) pager.animateScrollToPage(s.index) }
+    // A scroll the app itself started must not read back as the listener choosing a song.
+    var programmatic by remember { mutableStateOf(false) }
+    LaunchedEffect(s.index) {
+        if (s.index >= 0 && pager.currentPage != s.index && !pager.isScrollInProgress) { programmatic = true; pager.animateScrollToPage(s.index); programmatic = false }
+    }
     LaunchedEffect(pager) {
         snapshotFlow { pager.settledPage }.collect { page ->
             val now = PlayerController.state.value
-            if (page != now.index && page in now.queue.indices) { Haptics.tap(haptics); PlayerController.jumpTo(page) }
+            if (!programmatic && page != now.index && page in now.queue.indices) { Haptics.tap(haptics); PlayerController.jumpTo(page) }
         }
     }
-    Box(Modifier.fillMaxSize().offset { IntOffset(0, drag.coerceAtLeast(0f).roundToInt()) }.background(tint.accent).testTag("now_playing")) {
-        // Blurred artwork backdrop (a no-op below API 31, where the tint alone carries it)
-        Artwork(art, Modifier.fillMaxSize().blur(70.dp), RoundedCornerShape(0.dp))
+    Box(Modifier.fillMaxSize().offset { IntOffset(0, drag.value.coerceAtLeast(0f).roundToInt()) }.background(tint.accent).testTag("now_playing")) {
+        // Blurred artwork backdrop. Below API 31 the blur is a no-op, and a sharp cropped cover behind the
+        // text is worse than none, so the tint alone carries it there.
+        if (android.os.Build.VERSION.SDK_INT >= 31) Artwork(art, Modifier.fillMaxSize().blur(70.dp), RoundedCornerShape(0.dp))
+        else Box(Modifier.fillMaxSize().background(Brush.verticalGradient(listOf(tint.accent, Aoide.ground))))
         // The scrim is what makes white ink safe over any cover: 50% black at the top, 72% by the title, ground below.
         Box(Modifier.fillMaxSize().background(Brush.verticalGradient(listOf(Color.Black.copy(alpha = .5f), Color.Black.copy(alpha = .72f), Aoide.ground.copy(alpha = .97f)))))
         Column(
             Modifier.fillMaxSize()
-                .pointerInput(Unit) {
-                    detectVerticalDragGestures(
-                        onDragEnd = { if (drag > 120f) AppUi.nowPlayingOpen = false; drag = 0f },
-                        onDragCancel = { drag = 0f },
-                    ) { _, dy -> drag = (drag + dy).coerceAtLeast(0f) }
-                }
-                .statusBarsPadding().navigationBarsPadding().verticalScroll(rememberScrollState()),
+                .nestedScroll(dismiss)
+                .statusBarsPadding().navigationBarsPadding().verticalScroll(scroll),
         ) {
             Row(Modifier.fillMaxWidth().padding(horizontal = 4.dp), verticalAlignment = Alignment.CenterVertically) {
                 IconButton(onClick = { AppUi.nowPlayingOpen = false }, modifier = Modifier.semantics { contentDescription = "Close now playing" }.testTag("np_close")) { Icon(Icons.Filled.KeyboardArrowDown, null, tint = Aoide.fg, modifier = Modifier.size(28.dp)) }
@@ -189,19 +220,24 @@ fun NowPlayingScreen(tint: Tint, onNavigate: (String) -> Unit) {
                 IconButton(onClick = { AppUi.openMenu(t) }, modifier = Modifier.semantics { contentDescription = "More options" }) { Icon(Icons.Filled.MoreVert, null, tint = Aoide.fg) }
             }
             Spacer(Modifier.height(28.dp))
-            HorizontalPager(pager, Modifier.fillMaxWidth().testTag("np_pager"), contentPadding = PaddingValues(horizontal = 26.dp), pageSpacing = 14.dp, beyondViewportPageCount = 1) { page ->
-                val q = s.queue.getOrNull(page) ?: t
-                val scale = if (page == s.index) artScale else 0.92f
-                // Each page is a square of its own width, so the cover is never cropped to the pager's full-width height.
-                Box(Modifier.fillMaxWidth().aspectRatio(1f), contentAlignment = Alignment.Center) {
-                    Artwork(Catalog.cover(q.album?.cover, 640), Modifier.fillMaxSize().scale(scale).shadow(40.dp, RoundedCornerShape(12.dp), clip = false, ambientColor = Color.Black, spotColor = Color.Black), RoundedCornerShape(12.dp), contentDescription = q.album?.title)
+            // Sideways, the cover is capped to under half the height so the transport stays on screen.
+            BoxWithConstraints(Modifier.fillMaxWidth()) {
+                val side = if (maxHeight < Dp.Infinity) minOf(maxWidth - 52.dp, maxHeight * 0.45f) else maxWidth - 52.dp
+                HorizontalPager(pager, Modifier.fillMaxWidth().testTag("np_pager"), contentPadding = PaddingValues(horizontal = (maxWidth - side) / 2), pageSpacing = 14.dp, beyondViewportPageCount = 1) { page ->
+                    val q = s.queue.getOrNull(page) ?: t
+                    val scale = if (page == s.index) artScale else 0.92f
+                    Box(Modifier.size(side), contentAlignment = Alignment.Center) {
+                        Artwork(Catalog.cover(q.album?.cover, 640), Modifier.fillMaxSize().scale(scale).shadow(40.dp, RoundedCornerShape(12.dp), clip = false, ambientColor = Color.Black, spotColor = Color.Black), RoundedCornerShape(12.dp), contentDescription = q.album?.title)
+                    }
                 }
             }
             Spacer(Modifier.height(30.dp))
+            // The names follow the cover in view, so mid-swipe the words and the picture agree.
+            val shown = s.queue.getOrNull(pager.currentPage) ?: t
             Row(Modifier.padding(horizontal = 26.dp).fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                 Column(Modifier.weight(1f)) {
-                    Text(t.title, style = MaterialTheme.typography.headlineSmall.copy(fontSize = 22.sp), color = Aoide.fg, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.testTag("np_title"))
-                    Text(t.artistNames, style = MaterialTheme.typography.bodyLarge, color = Aoide.fg.copy(alpha = .78f), maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.clickable { t.primaryArtist?.let { AppUi.nowPlayingOpen = false; onNavigate("artist/${it.id}") } })
+                    Text(shown.title, style = MaterialTheme.typography.headlineSmall.copy(fontSize = 22.sp), color = Aoide.fg, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.testTag("np_title"))
+                    Text(shown.artistNames, style = MaterialTheme.typography.bodyLarge, color = Aoide.fg.copy(alpha = .78f), maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.clickable { shown.primaryArtist?.let { AppUi.nowPlayingOpen = false; onNavigate("artist/${it.id}") } })
                     info?.label?.takeIf { it.isNotBlank() }?.let { label ->
                         Box(Modifier.padding(top = 6.dp)) { QualityBadge(label, onDark = true) }
                     }
@@ -222,7 +258,7 @@ fun NowPlayingScreen(tint: Tint, onNavigate: (String) -> Unit) {
             var scrub by remember(t.id) { mutableStateOf<Float?>(null) }
             val known = s.durationMs > 0 && !failed
             val dur = s.durationMs.coerceAtLeast(1L)
-            val pos = scrub ?: (if (known) (s.positionMs.toFloat() / dur).coerceIn(0f, 1f) else 0f)
+            val pos = scrub ?: (if (known) (positionMs.toFloat() / dur).coerceIn(0f, 1f) else 0f)
             val sliderColors = SliderDefaults.colors(thumbColor = Aoide.fg, activeTrackColor = Aoide.fg.copy(alpha = .92f), inactiveTrackColor = Color.White.copy(alpha = .25f), disabledThumbColor = Aoide.fg.copy(alpha = .45f), disabledActiveTrackColor = Aoide.fg.copy(alpha = .35f), disabledInactiveTrackColor = Color.White.copy(alpha = .18f))
             val interaction = remember { androidx.compose.foundation.interaction.MutableInteractionSource() }
             Slider(
@@ -252,9 +288,14 @@ fun NowPlayingScreen(tint: Tint, onNavigate: (String) -> Unit) {
             Row(Modifier.fillMaxWidth().padding(horizontal = 22.dp, vertical = 4.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween) {
                 IconButton(onClick = { AppUi.lyricsOpen = true }, modifier = Modifier.semantics { contentDescription = "Lyrics" }.testTag("np_lyrics")) { Icon(Icons.Filled.Lyrics, null, tint = Aoide.fg.copy(alpha = .8f)) }
                 Spacer(Modifier.weight(1f))
-                val sleepAt by SleepTimer.endAt.collectAsState()
+                val sleepLeft by SleepTimer.remaining.collectAsState()
                 val sleepEnd by SleepTimer.endOfTrack.collectAsState()
-                IconButton(onClick = { AppUi.sleepOpen = true }, modifier = Modifier.semantics { contentDescription = "Sleep timer" }.testTag("np_sleep")) { Icon(Icons.Filled.Bedtime, null, tint = if (sleepAt != null || sleepEnd) Aoide.accent else Aoide.fg.copy(alpha = .8f)) }
+                val sleepLabel = SleepTimer.short(sleepLeft, sleepEnd)
+                // A running timer shows its countdown beside the icon, so it is never invisible.
+                Row(Modifier.clickable { AppUi.sleepOpen = true }.semantics { contentDescription = "Sleep timer" }.testTag("np_sleep").padding(horizontal = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+                    if (sleepLabel != null) Text(sleepLabel, style = MaterialTheme.typography.labelMedium, color = Aoide.accent, modifier = Modifier.padding(end = 2.dp).testTag("np_sleep_left"))
+                    IconButton(onClick = { AppUi.sleepOpen = true }) { Icon(Icons.Filled.Bedtime, null, tint = if (sleepLabel != null) Aoide.accent else Aoide.fg.copy(alpha = .8f)) }
+                }
                 IconButton(onClick = { AppUi.queueOpen = true }, modifier = Modifier.semantics { contentDescription = "Queue" }.testTag("np_queue")) { Icon(Icons.Filled.QueueMusic, null, tint = Aoide.fg.copy(alpha = .8f)) }
             }
             // Lyrics card, as Spotify shows under the controls
@@ -271,7 +312,7 @@ fun NowPlayingScreen(tint: Tint, onNavigate: (String) -> Unit) {
                         when {
                             // Timed words follow the song here too: the line being sung, then what comes next.
                             synced != null -> {
-                                val at = s.positionMs / 1000.0 + 0.25
+                                val at = positionMs / 1000.0 + 0.25
                                 val active = synced.indexOfLast { it.t <= at }
                                 // Hold four lines even at the end of the song, so the card never changes height.
                                 val from = active.coerceAtLeast(0).coerceAtMost((synced.size - 4).coerceAtLeast(0))
@@ -327,6 +368,7 @@ fun lyricLines(l: Lyrics?): List<String> {
 @Composable
 fun LyricsScreen(tint: Tint) {
     val s by PlayerController.state.collectAsState()
+    val positionMs by PlayerController.position.collectAsState()
     val t = s.current ?: return
     BackHandler { AppUi.lyricsOpen = false }
     val lyrics by rememberResource("lyrics", t.id) { Catalog.lyrics(t) }
@@ -344,7 +386,7 @@ fun LyricsScreen(tint: Tint) {
         when (val l = lyrics) {
             is Resource.Loading -> Box(Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.Center) { Text("Looking for lyrics…", style = MaterialTheme.typography.titleLarge, color = tint.ink) }
             is Resource.Failed -> Box(Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.Center) { Text("Lyrics unavailable", style = MaterialTheme.typography.titleLarge, color = tint.ink) }
-            is Resource.Ready -> LyricsBody(l.value, s.positionMs, tint, listState, Modifier.weight(1f))
+            is Resource.Ready -> LyricsBody(l.value, positionMs, tint, listState, Modifier.weight(1f))
         }
         Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
             val translatingFoot by Prefs.translateLyrics.value.collectAsState()
@@ -520,6 +562,10 @@ fun QueueScreen() {
             QueuePill(Icons.Filled.Radio, "Radio", s.context?.kind == "radio", Modifier.weight(1f).testTag("queue_radio"), enabled = !cur.isLocal) { Haptics.tap(haptics); PlayerController.playRadio(cur) }
         }
         val upcoming = s.upcoming
+        var saving by remember { mutableStateOf(false) }
+        if (saving) app.aoide.ui.components.NameSheet("Save this queue", s.context?.title ?: "My queue", "Save", "queue_name", "queue_save", onDismiss = { saving = false }) { name ->
+            val p = app.aoide.data.Library.createPlaylist(name, s.queue.filter { !it.isLocal }.ifEmpty { s.queue }); saving = false; app.aoide.ui.Toasts.show("Saved ${p.title}")
+        }
         Row(Modifier.fillMaxWidth().padding(start = 16.dp, end = 16.dp, top = 22.dp, bottom = 6.dp), verticalAlignment = Alignment.Bottom) {
             Column(Modifier.weight(1f)) {
                 Text("Continue Playing", style = MaterialTheme.typography.titleLarge)
@@ -537,6 +583,8 @@ fun QueueScreen() {
                 Text(app.aoide.ui.plural(upcoming.size, "song"), style = MaterialTheme.typography.bodySmall, color = Aoide.subdued)
                 Text(formatTime(upcoming.sumOf { it.duration }), style = MaterialTheme.typography.bodySmall, color = Aoide.subdued, modifier = Modifier.testTag("queue_length"))
             }
+            // A queue worth keeping becomes a playlist in one tap.
+            TextButton(onClick = { saving = true }, modifier = Modifier.padding(start = 8.dp).testTag("queue_save_playlist")) { Text("Save", color = Aoide.accent) }
         }
         LazyColumn(Modifier.weight(1f)) {
             if (upcoming.isEmpty()) {
@@ -548,6 +596,7 @@ fun QueueScreen() {
                     t, current = false,
                     onClick = { PlayerController.jumpTo(absolute) },
                     onRemove = { PlayerController.removeAt(absolute) },
+                    autoplayed = PlayerController.isAutoplayed(absolute),
                     dragHandle = Modifier.pointerInput(absolute) {
                         detectVerticalDragGestures(
                             onDragStart = { dragging = absolute; dragOffset = 0f },
@@ -588,18 +637,17 @@ private fun QueuePill(icon: androidx.compose.ui.graphics.vector.ImageVector, lab
 }
 
 @Composable
-private fun QueueRow(t: Track, current: Boolean, onClick: () -> Unit, onRemove: (() -> Unit)? = null, dragHandle: Modifier? = null, lifted: Boolean = false) {
-    val s by PlayerController.state.collectAsState()
-    Row(Modifier.fillMaxWidth().background(if (lifted) Aoide.elevated else Color.Transparent).clickable(onClick = onClick).padding(start = 16.dp, end = 4.dp, top = 6.dp, bottom = 6.dp).testTag("queue_row"), verticalAlignment = Alignment.CenterVertically) {
+private fun QueueRow(t: Track, current: Boolean, onClick: () -> Unit, onRemove: (() -> Unit)? = null, dragHandle: Modifier? = null, lifted: Boolean = false, autoplayed: Boolean = false) {
+    val haptics = rememberHaptics()
+    val menu = { AppUi.openMenu(t, onRemove, removeLabel = "Remove from queue") }
+    Row(Modifier.fillMaxWidth().background(if (lifted) Aoide.elevated else Color.Transparent).combinedClickable(onClick = onClick, onLongClick = { Haptics.confirm(haptics); menu() }).padding(start = 16.dp, end = 4.dp, top = 6.dp, bottom = 6.dp).testTag("queue_row"), verticalAlignment = Alignment.CenterVertically) {
         Artwork(Catalog.cover(t.album?.cover, 160), Modifier.size(48.dp))
         Spacer(Modifier.width(12.dp))
         Column(Modifier.weight(1f)) {
             Text(t.title, style = MaterialTheme.typography.bodyLarge, color = if (current) Aoide.accent else Aoide.fg, maxLines = 1, overflow = TextOverflow.Ellipsis)
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                if (current && s.isPlaying) { Equaliser(); Spacer(Modifier.width(6.dp)) }
-                Text(listOfNotNull(t.artistNames.takeIf { it.isNotBlank() }, t.duration.takeIf { it > 0 }?.let(::formatTime)).joinToString(" • "), style = MaterialTheme.typography.bodyMedium, color = Aoide.subdued, maxLines = 1, overflow = TextOverflow.Ellipsis)
-            }
+            Text(listOfNotNull(if (autoplayed) "Autoplay" else null, t.artistNames.takeIf { it.isNotBlank() }, t.duration.takeIf { it > 0 }?.let(::formatTime)).joinToString(" • "), style = MaterialTheme.typography.bodyMedium, color = Aoide.subdued, maxLines = 1, overflow = TextOverflow.Ellipsis)
         }
+        IconButton(onClick = menu, modifier = Modifier.semantics { contentDescription = "More options for ${t.title}" }.testTag("queue_more")) { Icon(Icons.Filled.MoreVert, null, tint = Aoide.subdued) }
         if (onRemove != null) IconButton(onClick = onRemove, modifier = Modifier.semantics { contentDescription = "Remove ${t.title} from queue" }.testTag("queue_remove")) { Icon(Icons.Filled.RemoveCircleOutline, null, tint = Aoide.subdued) }
         if (dragHandle != null) Icon(Icons.Filled.DragHandle, "Drag to reorder", tint = Aoide.subdued, modifier = dragHandle.padding(12.dp))
     }

@@ -9,7 +9,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.aspectRatio
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
@@ -120,9 +120,12 @@ fun <T> CardRow(items: List<T>, key: (T) -> Any, content: @Composable (T) -> Uni
 fun Chip(text: String, selected: Boolean, onClick: () -> Unit) {
     val bg = if (selected) Aoide.fg else Aoide.highlight
     val fg = if (selected) Aoide.base else Aoide.fg
-    Box(
-        Modifier.pressable(onClick = onClick).clip(RoundedCornerShape(50)).background(bg).padding(horizontal = 14.dp, vertical = 8.dp).semantics { contentDescription = "Filter $text" },
-    ) { Text(text, style = MaterialTheme.typography.labelLarge.copy(fontWeight = androidx.compose.ui.text.font.FontWeight.Medium), color = fg) }
+    // The pill keeps its size; the touch target around it is the 48 dp Android asks for.
+    Box(Modifier.heightIn(min = 44.dp).pressable(onClick = onClick).semantics { contentDescription = "Filter $text" }, contentAlignment = Alignment.Center) {
+        Box(Modifier.clip(RoundedCornerShape(50)).background(bg).padding(horizontal = 14.dp, vertical = 8.dp)) {
+            Text(text, style = MaterialTheme.typography.labelLarge.copy(fontWeight = androidx.compose.ui.text.font.FontWeight.Medium), color = fg)
+        }
+    }
 }
 
 /** The big orange play button. */
@@ -140,10 +143,10 @@ fun PlayFab(playing: Boolean, size: Dp = 56.dp, enabled: Boolean = true, onClick
 /** A translucent disc behind an icon, so a control over artwork clears 3:1 on any tint. Apple Music's move. */
 @Composable
 fun IconDisc(icon: ImageVector, description: String, modifier: Modifier = Modifier, tint: Color = Color.White, onClick: () -> Unit) {
-    Box(
-        modifier.pressable(onClick = onClick).size(40.dp).clip(CircleShape).background(Color.Black.copy(alpha = .5f)).semantics { contentDescription = description },
-        contentAlignment = Alignment.Center,
-    ) { Icon(icon, null, tint = tint, modifier = Modifier.size(24.dp)) }
+    // A 48 dp target around a 40 dp disc.
+    Box(modifier.pressable(onClick = onClick).size(48.dp).semantics { contentDescription = description }, contentAlignment = Alignment.Center) {
+        Box(Modifier.size(40.dp).clip(CircleShape).background(Color.Black.copy(alpha = .5f)), contentAlignment = Alignment.Center) { Icon(icon, null, tint = tint, modifier = Modifier.size(24.dp)) }
+    }
 }
 
 /** Heart that toggles Liked Songs. Spotify draws it as a + / check; the heart says more here. */
@@ -161,10 +164,12 @@ fun LikeButton(track: Track, size: Dp = 24.dp, modifier: Modifier = Modifier, ti
 }
 
 @Composable
-fun OutlinePill(text: String, selected: Boolean = false, enabled: Boolean = true, onClick: () -> Unit) {
-    Box(
-        Modifier.clip(RoundedCornerShape(50)).border(1.dp, if (selected) Aoide.fg else Aoide.subdued.copy(alpha = .6f), RoundedCornerShape(50)).clickable(enabled = enabled, onClick = onClick).padding(horizontal = 14.dp, vertical = 6.dp),
-    ) { Text(text, style = MaterialTheme.typography.labelLarge, color = if (enabled) Aoide.fg else Aoide.subdued) }
+fun OutlinePill(text: String, selected: Boolean = false, enabled: Boolean = true, pending: Boolean = false, onClick: () -> Unit) {
+    Box(Modifier.heightIn(min = 44.dp).clickable(enabled = enabled, onClick = onClick), contentAlignment = Alignment.Center) {
+        Box(Modifier.clip(RoundedCornerShape(50)).border(1.dp, if (selected || pending) Aoide.accent else if (enabled) Aoide.subdued.copy(alpha = .6f) else Aoide.subdued.copy(alpha = .3f), RoundedCornerShape(50)).padding(horizontal = 14.dp, vertical = 6.dp)) {
+            Text(text, style = MaterialTheme.typography.labelLarge, color = if (pending) Aoide.accent else if (enabled) Aoide.fg else Aoide.subdued)
+        }
+    }
 }
 
 @Composable
@@ -227,5 +232,3 @@ fun SkeletonCards(n: Int = 4) {
         }
     }
 }
-
-fun Modifier.aspectSquare() = this.aspectRatio(1f)

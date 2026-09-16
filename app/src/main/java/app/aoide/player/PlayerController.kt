@@ -53,7 +53,16 @@ data class PlayerUiState(
 
 /** The last queue, paused where it was, so a relaunch comes back on the same song. */
 @Serializable
-private data class Session(val queue: List<Track>, val index: Int, val positionMs: Long, val context: PlayContext? = null, val shuffle: Boolean = false, val repeat: Int = 0)
+internal data class Session(val queue: List<Track>, val index: Int, val positionMs: Long, val context: PlayContext? = null, val shuffle: Boolean = false, val repeat: Int = 0)
+
+/** Where the session lives; read by the app to restore its labels and by the service to restore the queue itself. */
+internal object SessionStore {
+    fun file(context: Context) = File(context.filesDir, "session.json")
+    fun load(context: Context): Session? {
+        val s = app.aoide.data.Store.read(file(context)) { json.decodeFromString<Session>(it) } ?: return null
+        return if (s.queue.isEmpty() || s.index !in s.queue.indices) null else s
+    }
+}
 
 /** App-side handle on the session. One per process; the UI observes [state]. */
 object PlayerController {
@@ -62,6 +71,9 @@ object PlayerController {
     private var ticker: Job? = null
     private val _state = MutableStateFlow(PlayerUiState())
     val state: StateFlow<PlayerUiState> = _state
+    /** The playhead, four times a second, on its own: only the transport, the capsule and the lyrics need it, and nothing else should wake with it. */
+    private val _position = MutableStateFlow(0L)
+    val position: StateFlow<Long> = _position
     private var context: PlayContext? = null
     private var pendingShuffle = false
     /** The queue as it was before shuffle, so turning shuffle off restores the order. */
@@ -74,24 +86,47 @@ object PlayerController {
     /** Songs already swapped to the second source, so a queue is not rebuilt over and over. */
     private val upgraded = HashSet<String>()
     private var tick = 0
+    /** The song whose play has been recorded, and how long the current one has been heard. */
+    private var countedId: String? = null
+    private var listenedMs = 0L
+    private var lastTickAt = 0L
 
     private var appContext: Context? = null
     private var lastWidget: String? = null
 
+    private var connecting = false
+    private var upgradeJob: Job? = null
+
     fun connect(appContext: Context) {
-        if (controller != null) return
+        // A controller whose service went away (the task was swiped off while paused) is dead weight: drop it and bind again.
+        controller?.let { c -> if (c.isConnected) return else { runCatching { c.release() }; controller = null } }
+        if (connecting) return
+        connecting = true
         this.appContext = appContext.applicationContext
-        sessionFile = File(appContext.filesDir, "session.json")
+        sessionFile = SessionStore.file(appContext)
         val token = SessionToken(appContext, ComponentName(appContext, PlaybackService::class.java))
-        val future = MediaController.Builder(appContext, token).buildAsync()
+        val future = MediaController.Builder(appContext, token).setListener(object : MediaController.Listener {
+            override fun onDisconnected(controller: MediaController) {
+                if (PlayerController.controller === controller) {
+                    PlayerController.controller = null
+                    upgradeJob?.cancel()
+                    ticker?.cancel()
+                    _state.value = PlayerUiState(shuffle = _state.value.shuffle)
+                }
+            }
+        }).buildAsync()
         future.addListener({
+            connecting = false
             val c = runCatching { future.get() }.getOrNull() ?: return@addListener
             controller = c
             c.addListener(listener)
             _state.value = _state.value.copy(shuffle = pendingShuffle)
-            if (c.mediaItemCount == 0) restoreSession(c)
-            // A lookup that lands after the queue was built upgrades the songs still to come.
-            scope.launch { HiRate.known.collect { upgradeQueue() } }
+            if (c.mediaItemCount == 0 || c.playbackState == Player.STATE_IDLE) restoreSession(c)
+            // Long recordings pick up where they were left; the position is looked up when the item is reached (see Positions).
+            scope.launch { Library.state.collect { pushLikeButton() } }
+            // A lookup that lands after the queue was built upgrades the songs still to come; a burst of answers costs one pass.
+            upgradeJob?.cancel()
+            upgradeJob = scope.launch { HiRate.known.collect { upgradeQueue(); delay(300) } }
             sync()
         }, ContextCompat.getMainExecutor(appContext))
     }
@@ -99,9 +134,14 @@ object PlayerController {
     private val listener = object : Player.Listener {
         override fun onEvents(player: Player, events: Player.Events) = sync()
         override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
-            trackOf(mediaItem)?.let { Library.recordPlay(it) }
+            // A play is recorded once the song has really been listened to (see the ticker), not on arrival:
+            // skipping through ten songs is not ten plays, and an upgrade swap of the same song is not a second one.
+            if (mediaItem?.mediaId != countedId) { countedId = null; listenedMs = 0L }
             sync()
+            pushLikeButton()
             saveSession(force = true)
+            // Songs further on are asked about as the queue advances, so a long album is not capped at its first thirty.
+            controller?.let { c -> val i = c.currentMediaItemIndex; HiRate.requestAll((i until minOf(i + 30, c.mediaItemCount)).mapNotNull { trackOf(c.getMediaItemAt(it)) }) }
         }
         override fun onIsPlayingChanged(isPlaying: Boolean) {
             if (isPlaying) failStreak = 0
@@ -140,7 +180,8 @@ object PlayerController {
 
     private fun sync() {
         val c = controller ?: return
-        val items = (0 until c.mediaItemCount).mapNotNull { trackOf(c.getMediaItemAt(it)) }
+        // One slot per item, so an item whose track cannot be read never shifts the ones after it.
+        val items = (0 until c.mediaItemCount).map { i -> val m = c.getMediaItemAt(i); trackOf(m) ?: Track(id = m.mediaId, title = m.mediaMetadata.title?.toString() ?: "") }
         val status = when {
             c.playerError != null || _state.value.status == Status.ERROR && c.playbackState == Player.STATE_IDLE && c.mediaItemCount > 0 && !c.playWhenReady -> Status.ERROR
             c.mediaItemCount == 0 -> Status.IDLE
@@ -151,6 +192,7 @@ object PlayerController {
         }
         val cur = items.getOrNull(c.currentMediaItemIndex)
         val dur = if (c.duration > 0 && c.playbackState != Player.STATE_IDLE) c.duration else if (c.playbackState == Player.STATE_IDLE) _state.value.durationMs else 0L
+        _position.value = c.currentPosition.coerceAtLeast(0)
         _state.value = _state.value.copy(
             queue = items,
             index = if (items.isEmpty()) -1 else c.currentMediaItemIndex,
@@ -175,25 +217,51 @@ object PlayerController {
 
     private fun startTicker() {
         if (ticker?.isActive == true) return
+        lastTickAt = System.currentTimeMillis()
         ticker = scope.launch {
             while (isActive) {
                 val c = controller ?: break
                 val dur = if (c.duration > 0) c.duration else 0L
-                _state.value = _state.value.copy(positionMs = c.currentPosition.coerceAtLeast(0), durationMs = dur)
+                val pos = c.currentPosition.coerceAtLeast(0)
+                _position.value = pos
+                // The shared state only moves when something other than the playhead changed, so lists stay asleep.
+                if (dur != _state.value.durationMs) _state.value = _state.value.copy(durationMs = dur, positionMs = pos)
                 saveSession()
-                // The full session is throttled to every 4 s; the position alone is cheap enough to note every second.
-                if (tick++ % 4 == 0) _state.value.current?.let { Prefs.putLong("pos:${it.id}", _state.value.positionMs) }
+                Positions.note(_state.value.current, pos, dur)
+                // A play counts once 20 s (or 30 % of a short song) has actually been heard.
+                val now = System.currentTimeMillis()
+                if (c.isPlaying) listenedMs += (now - lastTickAt).coerceIn(0, 1000)
+                lastTickAt = now
+                val cur = _state.value.current
+                if (cur != null && countedId != cur.id && (listenedMs >= 20_000 || (dur > 0 && listenedMs >= dur * 0.3))) {
+                    countedId = cur.id
+                    Library.recordPlay(cur)
+                }
                 delay(250)
             }
         }
     }
 
-    private fun trackOf(item: MediaItem?): Track? = item?.mediaMetadata?.extras?.getString("track")?.let { runCatching { json.decodeFromString<Track>(it) }.getOrNull() }
+    /** The track behind a queue item: from the registry when it has been seen, else decoded once from the item's extras. */
+    private fun trackOf(item: MediaItem?): Track? {
+        if (item == null) return null
+        TrackRegistry.get(item.mediaId)?.let { return it }
+        return item.mediaMetadata.extras?.getString("track")?.let { runCatching { json.decodeFromString<Track>(it) }.getOrNull() }?.also(TrackRegistry::put)
+    }
 
     private fun mediaItem(t: Track): MediaItem = AoideMedia.mediaItemFor(t)
 
     /** Songs the service appended by itself when the queue ran out; the queue screen labels them. */
     fun isAutoplayed(i: Int): Boolean = controller?.let { c -> i in 0 until c.mediaItemCount && c.getMediaItemAt(i).mediaMetadata.extras?.getBoolean("autoplay") == true } ?: false
+
+    /* ---------- notification ---------- */
+
+    /** Tell the session which way the Like button should point for the song playing. */
+    private fun pushLikeButton() {
+        val c = controller ?: return
+        val cur = _state.value.current ?: return
+        runCatching { c.sendCustomCommand(androidx.media3.session.SessionCommand(PlaybackService.CMD_LIKE_STATE, android.os.Bundle.EMPTY), android.os.Bundle().apply { putBoolean("liked", Library.state.value.isLiked(cur.id)) }) }
+    }
 
     /* ---------- session ---------- */
 
@@ -203,41 +271,54 @@ object PlayerController {
         lastSave = now
         val s = _state.value
         val f = sessionFile ?: return
+        // Long queues are windowed around the current song, so the index kept always points inside what was kept.
+        val from = (s.index - 100).coerceAtLeast(0)
+        val kept = s.queue.drop(from).take(300)
+        val session = Session(kept, s.index - from, s.positionMs, s.context, s.shuffle, s.repeat)
         scope.launch(Dispatchers.IO) {
             runCatching {
                 if (s.index < 0) f.delete()
-                else f.writeText(json.encodeToString(Session(s.queue.take(300), s.index, s.positionMs, s.context, s.shuffle, s.repeat)))
+                else app.aoide.data.Store.writeAtomic(f, json.encodeToString(session))
             }
         }
     }
 
-    /** Put the last queue back, paused at the saved position; nothing loads until the listener presses play. */
+    /**
+     * Put the last queue back, paused at the saved position; nothing loads until the listener presses play.
+     * The service may already have restored the queue itself (it does so when it starts cold, so a widget
+     * press finds something to play); then only the labels are taken from the session.
+     */
     private fun restoreSession(c: MediaController) {
-        val f = sessionFile ?: return
-        val s = runCatching { json.decodeFromString<Session>(f.readText()) }.getOrNull() ?: return
-        if (s.queue.isEmpty() || s.index !in s.queue.indices) return
+        val s = appContext?.let(SessionStore::load) ?: return
         context = s.context
         pendingShuffle = s.shuffle
-        val latest = Prefs.getLong("pos:${s.queue[s.index].id}").takeIf { it >= 0 } ?: s.positionMs
         upgraded.clear()
         // Answers kept from earlier are read as the items are built; the songs coming up are asked about now.
         HiRate.requestAll(s.queue.subList(s.index, minOf(s.index + 12, s.queue.size)))
-        c.setMediaItems(s.queue.map(::mediaItem), s.index, maxOf(s.positionMs, latest))
-        c.repeatMode = s.repeat
-        c.playWhenReady = false
+        if (c.mediaItemCount == 0) {
+            c.setMediaItems(s.queue.map(::mediaItem), s.index, s.positionMs.coerceAtLeast(0))
+            c.repeatMode = s.repeat
+            c.playWhenReady = false
+        }
         _state.value = _state.value.copy(shuffle = s.shuffle, durationMs = 0)
     }
 
     /* ---------- commands ---------- */
 
-    fun playTracks(tracks: List<Track>, start: Int, ctx: PlayContext?) {
+    /**
+     * Start a queue. [shuffled] is the caller's intent, not a sticky global: Play on a record plays it in
+     * order even after Shuffle was pressed somewhere else, and Shuffle never leaves shuffle on behind it.
+     */
+    fun playTracks(tracks: List<Track>, start: Int, ctx: PlayContext?, shuffled: Boolean = false) {
         val c = controller ?: return
-        val playable = tracks.filter { it.isLocal || it.duration >= 0 }
+        val playable = tracks.filter { it.isLocal || it.id.isNotBlank() }
         if (playable.isEmpty()) return
         var list = playable
         var index = start.coerceIn(0, playable.lastIndex)
         unshuffled = null
-        if (_state.value.shuffle) {
+        pendingShuffle = shuffled
+        _state.value = _state.value.copy(shuffle = shuffled)
+        if (shuffled) {
             unshuffled = playable
             val first = playable[index]
             list = listOf(first) + playable.filterIndexed { i, _ -> i != index }.shuffled()
@@ -260,7 +341,7 @@ object PlayerController {
     /** Hand a queue to the player and begin. */
     private fun start(c: MediaController, list: List<Track>, index: Int) {
         _state.value = _state.value.copy(error = null, status = Status.LOADING, durationMs = 0)
-        c.setMediaItems(list.map(::mediaItem), index, 0)
+        c.setMediaItems(list.map(::mediaItem), index, Positions.resumeAt(list[index]))
         c.prepare()
         c.play()
         sync()
@@ -417,6 +498,12 @@ object PlayerController {
         c.play()
     }
 
+    /** A kept file is being deleted: if it is the one playing, move back onto the stream before the file goes. */
+    fun onDownloadRemoved(trackId: String) {
+        StreamResolver.forget(trackId)
+        if (_state.value.current?.id == trackId) reloadCurrent()
+    }
+
     /** Re-open the current track at the new quality, keeping the position. */
     fun reloadCurrent() {
         val c = controller ?: return
@@ -492,9 +579,13 @@ object PlayerController {
         }
     }
 
+    /** Songs after [i] in the current queue, for "play from here" and "add the rest". */
+    fun queueFrom(list: List<Track>, i: Int): List<Track> = list.drop(i + 1)
+
     /** Test seam: lets a screenshot test paint the player without audio. */
     fun setStateForTest(s: PlayerUiState) {
         _state.value = s
+        _position.value = s.positionMs
         s.current?.let { AppUi.player = Tint.of(it.album?.vibrantColor) }
     }
 }

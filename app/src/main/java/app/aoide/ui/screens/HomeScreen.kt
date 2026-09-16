@@ -29,6 +29,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -65,6 +66,7 @@ import app.aoide.ui.theme.Aoide
 import kotlinx.coroutines.launch
 import java.util.Calendar
 
+@OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
 @Composable
 fun HomeScreen(onNavigate: (String) -> Unit) {
     val lib by Library.state.collectAsState()
@@ -77,7 +79,8 @@ fun HomeScreen(onNavigate: (String) -> Unit) {
     val related by rememberResource("related", seed?.id) { seed?.let { runCatching { Catalog.related(it.id) }.getOrDefault(emptyList()) } ?: emptyList() }
     val seedArtist = lib.recentTracks.firstOrNull { it.primaryArtist?.id?.startsWith("UC") == true }?.primaryArtist
     val fromArtist by rememberResource("fromArtist", seedArtist?.id) { seedArtist?.let { runCatching { Catalog.artist(it.id) }.getOrNull() } }
-    val hour = Calendar.getInstance().get(Calendar.HOUR_OF_DAY)
+    // Read once per composition of the screen, not on every recomposition, so the wash cannot flip mid-scroll.
+    val hour = remember { Calendar.getInstance().get(Calendar.HOUR_OF_DAY) }
     val greeting = when {
         hour < 5 -> "Good night"
         hour < 12 -> "Good morning"
@@ -116,16 +119,24 @@ fun HomeScreen(onNavigate: (String) -> Unit) {
         }
     }
 
-    Box(Modifier.fillMaxSize()) {
+    // Pull down to ask for everything again; the indicator hides once the last of the five answers is in.
+    val loading = shelves is Resource.Loading || releases is Resource.Loading || moods is Resource.Loading
+    var pulled by remember { mutableStateOf(false) }
+    LaunchedEffect(loading) { if (!loading) pulled = false }
+    androidx.compose.material3.pulltorefresh.PullToRefreshBox(
+        isRefreshing = pulled && loading,
+        onRefresh = { pulled = true; shelves.reload(); releases.reload(); moods.reload(); related.reload(); fromArtist.reload() },
+        modifier = Modifier.fillMaxSize(),
+    ) {
         Box(Modifier.fillMaxWidth().height(300.dp).background(Brush.verticalGradient(listOf(wash, Aoide.ground))))
         LazyColumn(Modifier.fillMaxSize().testTag("home")) {
-        item {
+        item(key = "greeting") {
             Row(Modifier.statusBarsPadding().fillMaxWidth().padding(start = 16.dp, end = 4.dp, top = 12.dp), verticalAlignment = Alignment.CenterVertically) {
                 Text(greeting, style = MaterialTheme.typography.headlineMedium, modifier = Modifier.weight(1f))
                 IconButton(onClick = { onNavigate("settings") }, modifier = Modifier.semantics { contentDescription = "Settings" }.testTag("settings_button")) { Icon(Icons.Outlined.Settings, null, tint = Aoide.fg) }
             }
         }
-        item {
+        item(key = "update") {
             val up by Updates.state.collectAsState()
             val rel = (up as? Updates.State.Available)?.release ?: (up as? Updates.State.Ready)?.release
             if (rel != null && !Updates.isDismissed(rel.version)) {
@@ -143,7 +154,7 @@ fun HomeScreen(onNavigate: (String) -> Unit) {
                 }
             }
         }
-        item {
+        item(key = "quick") {
             Column(Modifier.padding(horizontal = 16.dp, vertical = 12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 quick.chunked(2).forEach { pair ->
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -163,8 +174,8 @@ fun HomeScreen(onNavigate: (String) -> Unit) {
             }
         }
 
-        item { SectionTitle("New releases") }
-        item {
+        item(key = "releases_title") { SectionTitle("New releases") }
+        item(key = "releases") {
             when (val r = releases) {
                 is Resource.Loading -> SkeletonCards()
                 is Resource.Failed -> ErrorState(r.error) { r.reload() }
@@ -193,8 +204,8 @@ fun HomeScreen(onNavigate: (String) -> Unit) {
         }
 
         if (lib.recentTracks.isNotEmpty()) {
-            item { SectionTitle("Jump back in", onSeeAll = { onNavigate("history") }) }
-            item {
+            item(key = "recent_title") { SectionTitle("Jump back in", onSeeAll = { onNavigate("history") }) }
+            item(key = "recent") {
                 CardRow(lib.recentTracks.take(12), { it.id }) { t ->
                     MediaCard(Catalog.cover(t.album?.cover, 320), t.title, t.artistNames, tag = "recent_card") {
                         scope.launch { PlayerController.playTracks(lib.recentTracks, lib.recentTracks.indexOfFirst { it.id == t.id }, PlayContext("recent", "Recently played")) }
@@ -205,33 +216,33 @@ fun HomeScreen(onNavigate: (String) -> Unit) {
 
         val rel = (related as? Resource.Ready)?.value.orEmpty()
         if (seed != null && rel.isNotEmpty()) {
-            rel.firstOrNull { it.tracks.isNotEmpty() }?.let { s -> item { ShelfRow(s, onNavigate, title = "More like ${seed.title}", tag = "popular_card") } }
-            rel.filter { it.tracks.isEmpty() }.take(2).forEach { s -> item { ShelfRow(s, onNavigate) } }
+            rel.firstOrNull { it.tracks.isNotEmpty() }?.let { s -> item(key = "related_songs") { ShelfRow(s, onNavigate, title = "More like ${seed.title}", tag = "popular_card") } }
+            rel.filter { it.tracks.isEmpty() }.take(2).forEachIndexed { i, s -> item(key = "related_$i") { ShelfRow(s, onNavigate) } }
         }
 
         val fa = (fromArtist as? Resource.Ready)?.value
         if (fa != null && (fa.albums.isNotEmpty() || fa.singles.isNotEmpty())) {
-            item { SectionTitle("More from ${fa.artist.name}", onSeeAll = { onNavigate("artist/${fa.artist.id}") }) }
-            item { CardRow((fa.albums + fa.singles).distinctBy { it.id }.take(12), { it.id }) { a -> MediaCard(Catalog.cover(a.cover, 320), a.title, a.year.ifBlank { a.type?.lowercase()?.replaceFirstChar(Char::uppercase) }) { onNavigate("album/${a.id}") } } }
+            item(key = "artist_title") { SectionTitle("More from ${fa.artist.name}", onSeeAll = { onNavigate("artist/${fa.artist.id}") }) }
+            item(key = "artist_row") { CardRow((fa.albums + fa.singles).distinctBy { it.id }.take(12), { it.id }) { a -> MediaCard(Catalog.cover(a.cover, 320), a.title, a.year.ifBlank { a.type?.lowercase()?.replaceFirstChar(Char::uppercase) }) { onNavigate("album/${a.id}") } } }
         }
 
         when (val s = shelves) {
-            is Resource.Loading -> item { SkeletonCards() }
-            is Resource.Failed -> item { ErrorState(s.error) { s.reload() } }
-            is Resource.Ready -> s.value.forEach { shelf -> item { ShelfRow(shelf, onNavigate, tag = "home_card") } }
+            is Resource.Loading -> item(key = "shelves_loading") { SkeletonCards() }
+            is Resource.Failed -> item(key = "shelves_failed") { ErrorState(s.error) { s.reload() } }
+            is Resource.Ready -> s.value.forEachIndexed { i, shelf -> item(key = "shelf_$i") { ShelfRow(shelf, onNavigate, tag = "home_card") } }
         }
 
         val tiles = (moods as? Resource.Ready)?.value.orEmpty()
         if (tiles.isNotEmpty()) {
-            item { SectionTitle("Browse by mood", onSeeAll = { onNavigate("search") }) }
-            item {
+            item(key = "moods_title") { SectionTitle("Browse by mood", onSeeAll = { onNavigate("search") }) }
+            item(key = "moods") {
                 LazyRow(contentPadding = PaddingValues(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     items(tiles.take(14), key = { it.title + it.params }) { m -> Chip(m.title, false) { MoodTitles.put(m.browseId + m.params, m.title); onNavigate("mood/${m.browseId}?p=${Uri.encode(m.params)}") } }
                 }
             }
         }
-        item { Spacer(Modifier.height(24.dp)) }
-        item {
+        item(key = "gap") { Spacer(Modifier.height(24.dp)) }
+        item(key = "note") {
             Text(
                 "Catalogue and songs from the music service. Songs marked 320 come from a second source at a higher bitrate. Lyrics from a community database.",
                 style = MaterialTheme.typography.bodySmall, color = Aoide.subdued, modifier = Modifier.padding(16.dp).clickable { onNavigate("settings") }.testTag("source_note"),

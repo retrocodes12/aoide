@@ -98,8 +98,9 @@ private fun <T> ChoiceRow(title: String, body: String, options: List<T>, chosen:
 internal fun FeatureRows(onNavigate: (String) -> Unit) {
     val downloads by Downloads.all.collectAsState()
     val lib by Library.state.collectAsState()
+    val eq by app.aoide.player.AudioEffects.state.collectAsState()
     Section("More", "")
-    FeatureRow(Icons.Filled.GraphicEq, "Equalizer", if (app.aoide.player.AudioEffects.state.value.enabled) "On · ${app.aoide.player.AudioEffects.state.value.preset}" else "Off", "row_equalizer") { onNavigate("equalizer") }
+    FeatureRow(Icons.Filled.GraphicEq, "Equalizer", if (eq.enabled) "On · ${eq.preset}" else "Off", "row_equalizer") { onNavigate("equalizer") }
     FeatureRow(Icons.Filled.Download, "Downloads", "${plural(downloads.size, "song")} · ${formatBytes(downloads.values.sumOf { it.bytes })}", "row_downloads") { onNavigate("downloads") }
     FeatureRow(Icons.Filled.History, "History", "${plural(lib.plays.values.sum(), "play")} on this phone", "row_history") { onNavigate("history") }
     FeatureRow(Icons.Filled.FolderOpen, "On this phone", "Music files already on the device", "row_local") { onNavigate("local_files") }

@@ -48,7 +48,6 @@ import androidx.compose.ui.unit.dp
 import app.aoide.data.Catalog
 import app.aoide.player.PlayerController
 import app.aoide.player.Status
-import app.aoide.player.StreamResolver
 import app.aoide.ui.AppUi
 import app.aoide.ui.theme.Aoide
 import app.aoide.ui.theme.Tint
@@ -61,11 +60,10 @@ import app.aoide.ui.theme.Tint
 @Composable
 fun MiniPlayer(tint: Tint) {
     val s by PlayerController.state.collectAsState()
-    val infos by StreamResolver.infos.collectAsState()
+    val position by PlayerController.position.collectAsState()
     val t = s.current ?: return
-    val info = infos[t.id]
     val failed = s.status == Status.ERROR
-    val progress = if (s.durationMs > 0) (s.positionMs.toFloat() / s.durationMs).coerceIn(0f, 1f) else 0f
+    val progress = if (s.durationMs > 0) (position.toFloat() / s.durationMs).coerceIn(0f, 1f) else 0f
     // Spotify's capsule gesture: drag it sideways and let go to skip; it springs back either way.
     val scope = rememberCoroutineScope()
     val haptics = rememberHaptics()

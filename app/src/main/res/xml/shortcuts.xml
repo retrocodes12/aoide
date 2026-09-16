@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="utf-8"?>
+<shortcuts xmlns:android="http://schemas.android.com/apk/res/android">
+    <shortcut android:shortcutId="liked" android:enabled="true" android:icon="@drawable/ic_liked" android:shortcutShortLabel="@string/shortcut_liked">
+        <intent android:action="android.intent.action.VIEW" android:targetPackage="app.aoide" android:targetClass="app.aoide.MainActivity">
+            <extra android:name="app.aoide.route" android:value="liked" />
+        </intent>
+    </shortcut>
+    <shortcut android:shortcutId="search" android:enabled="true" android:icon="@drawable/ic_search" android:shortcutShortLabel="@string/shortcut_search">
+        <intent android:action="android.intent.action.VIEW" android:targetPackage="app.aoide" android:targetClass="app.aoide.MainActivity">
+            <extra android:name="app.aoide.route" android:value="search" />
+        </intent>
+    </shortcut>
+    <shortcut android:shortcutId="downloads" android:enabled="true" android:icon="@drawable/ic_download" android:shortcutShortLabel="@string/shortcut_downloads">
+        <intent android:action="android.intent.action.VIEW" android:targetPackage="app.aoide" android:targetClass="app.aoide.MainActivity">
+            <extra android:name="app.aoide.route" android:value="downloads" />
+        </intent>
+    </shortcut>
+</shortcuts>

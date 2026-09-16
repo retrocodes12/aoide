@@ -17,6 +17,7 @@ class AoideApp : Application() {
         Library.init(this)
         Downloads.init(this)
         AudioEffects.load()
+        kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.IO).launch { app.aoide.data.HiRate.prune(); app.aoide.player.Positions.prune() }
         Aoide.apply(Prefs.accent.value, Prefs.pureBlack.on)
         if (BuildConfig.DEBUG) runCatching {
             Class.forName("app.aoide.debug.DebugInit").getMethod("init", Application::class.java).invoke(null, this)

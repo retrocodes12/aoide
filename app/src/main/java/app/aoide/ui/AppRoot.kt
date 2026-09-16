@@ -35,6 +35,12 @@ import androidx.compose.material3.NavigationBarItemDefaults
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
@@ -48,7 +54,6 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.testTagsAsResourceId
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import androidx.navigation.NavHostController
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
@@ -78,6 +83,7 @@ import app.aoide.ui.screens.EqualizerScreen
 import app.aoide.ui.screens.ImportScreen
 import app.aoide.ui.screens.MoodScreen
 import app.aoide.ui.screens.DiscographyScreen
+import app.aoide.ui.screens.SmartScreen
 import app.aoide.ui.components.SleepSheet
 import app.aoide.ui.components.UpdateSheet
 import app.aoide.ui.theme.Aoide
@@ -97,7 +103,14 @@ fun AppRoot() {
     val backStack by nav.currentBackStackEntryAsState()
     val route = backStack?.destination?.route ?: "home"
     val player by PlayerController.state.collectAsState()
-    val navigate: (String) -> Unit = { r -> nav.navigate(r) { launchSingleTop = true } }
+    // A tab root pops back to itself rather than stacking a second copy on top of a broken page.
+    val navigate: (String) -> Unit = { r ->
+        if (r == "home" || r == "search" || r == "library") nav.navigate(r) { popUpTo("home") { saveState = true; inclusive = r == "home" }; launchSingleTop = true; restoreState = r != "home" }
+        else nav.navigate(r) { launchSingleTop = true }
+    }
+    // The tab that owns the page being read stays lit on detail pages, as Spotify does.
+    var lastTab by remember { mutableStateOf("home") }
+    LaunchedEffect(route) { TABS.firstOrNull { route.startsWith(it.route) }?.let { lastTab = it.route } }
 
     LaunchedEffect(Unit) {
         // A moment after launch, so the first screen's own requests go first.
@@ -124,6 +137,7 @@ fun AppRoot() {
             composable("search?q={q}", arguments = listOf(navArgument("q") { nullable = true; defaultValue = null }), enterTransition = { tab }, exitTransition = { tabOut }, popEnterTransition = { tab }, popExitTransition = { tabOut }) { SearchScreen(it.arguments?.getString("q"), navigate) }
             composable("library", enterTransition = { tab }, exitTransition = { tabOut }, popEnterTransition = { tab }, popExitTransition = { tabOut }) { LibraryScreen(navigate) }
             composable("liked") { LikedScreen({ nav.popBackStack() }) }
+            composable("smart/{kind}") { SmartScreen(it.arguments!!.getString("kind")!!) { nav.popBackStack() } }
             composable("album/{id}") { AlbumScreen(it.arguments!!.getString("id")!!, { nav.popBackStack() }, navigate) }
             composable("artist/{id}") { ArtistScreen(it.arguments!!.getString("id")!!, { nav.popBackStack() }, navigate) }
             composable("mood/{id}?p={p}", arguments = listOf(navArgument("p") { nullable = true; defaultValue = null })) { MoodScreen(it.arguments!!.getString("id")!!, it.arguments?.getString("p") ?: "", { nav.popBackStack() }, navigate) }
@@ -138,13 +152,15 @@ fun AppRoot() {
             composable("import?link={link}", arguments = listOf(navArgument("link") { nullable = true; defaultValue = null })) { ImportScreen(it.arguments?.getString("link"), { nav.popBackStack() }, navigate) }
         }
 
-        // Mini player + tab bar float over the content on a tall fade, so rows are not sliced mid-height where they pass under
-        Column(Modifier.align(Alignment.BottomCenter).fillMaxWidth().background(Brush.verticalGradient(0f to Color.Transparent, 0.22f to Aoide.ground.copy(alpha = .94f), 0.4f to Aoide.ground, 1f to Aoide.base))) {
-            Spacer(Modifier.height(72.dp))
+        // Mini player + tab bar float over the content on a tall fade, so rows are not sliced mid-height where they pass under.
+        // The fade swallows touches: a row that has dissolved into it is not a row that can be tapped.
+        var barHeight by remember { mutableStateOf(0) }
+        Column(Modifier.align(Alignment.BottomCenter).fillMaxWidth().onSizeChanged { barHeight = it.height }.background(Brush.verticalGradient(0f to Color.Transparent, 0.22f to Aoide.ground.copy(alpha = .94f), 0.4f to Aoide.ground, 1f to Aoide.base))) {
+            Spacer(Modifier.height(72.dp).fillMaxWidth().pointerInput(Unit) { awaitPointerEventScope { while (true) awaitPointerEvent().changes.forEach { it.consume() } } })
             if (player.current != null) MiniPlayer(AppUi.player)
             NavigationBar(containerColor = Color.Transparent, tonalElevation = 0.dp, windowInsets = NavigationBarDefaults.windowInsets, modifier = Modifier.testTag("tab_bar")) {
                 TABS.forEach { t ->
-                    val selected = route.startsWith(t.route)
+                    val selected = lastTab == t.route
                     NavigationBarItem(
                         selected = selected,
                         onClick = { nav.navigate(t.route) { popUpTo("home") { saveState = true }; launchSingleTop = true; restoreState = true } },
@@ -175,7 +191,10 @@ fun AppRoot() {
         }
         if (AppUi.updateOpen) UpdateSheet { AppUi.updateOpen = false; AppUi.updateAnswered = true }
 
-        ToastHost(Modifier.align(Alignment.BottomCenter).padding(bottom = if (AppUi.nowPlayingOpen) 200.dp else 132.dp).navigationBarsPadding())
+        // The toast sits just above whatever the bottom stack measures, so it never lands on the capsule.
+        val density = androidx.compose.ui.platform.LocalDensity.current
+        val above = with(density) { (barHeight - 72.dp.roundToPx()).coerceAtLeast(0).toDp() } + 8.dp
+        ToastHost(Modifier.align(Alignment.BottomCenter).padding(bottom = if (AppUi.nowPlayingOpen) 200.dp else above))
     }
 }
 
@@ -203,12 +222,9 @@ private fun ToastHost(modifier: Modifier) {
         delay(3200)
         if (Toasts.current.value?.first == t.first) Toasts.clear()
     }
-    Box(modifier.padding(horizontal = 24.dp).clip(RoundedCornerShape(10.dp)).background(Aoide.elevated2).padding(horizontal = 16.dp, vertical = 12.dp).testTag("toast")) {
+    Box(modifier.padding(horizontal = 24.dp).clip(RoundedCornerShape(10.dp)).background(Aoide.elevated2).padding(horizontal = 16.dp, vertical = 12.dp).semantics { liveRegion = androidx.compose.ui.semantics.LiveRegionMode.Polite }.testTag("toast")) {
         Text(t.second, style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.SemiBold), color = Aoide.fg)
     }
 }
 
 private val Int.sp get() = androidx.compose.ui.unit.TextUnit(this.toFloat(), androidx.compose.ui.unit.TextUnitType.Sp)
-
-@Suppress("unused")
-private fun keep(n: NavHostController) = n

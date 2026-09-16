@@ -29,16 +29,16 @@ import app.aoide.ui.theme.Aoide
 @OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
 @Composable
 fun SleepSheet(onDismiss: () -> Unit) {
-    val endAt by SleepTimer.endAt.collectAsState()
     val endOfTrack by SleepTimer.endOfTrack.collectAsState()
+    val minutes by SleepTimer.minutes.collectAsState()
+    val remaining by SleepTimer.remaining.collectAsState()
     ModalBottomSheet(onDismissRequest = onDismiss, containerColor = Aoide.elevated2, scrimColor = SheetScrim, dragHandle = null, modifier = Modifier.testTag("sleep_sheet")) {
         Column(Modifier.navigationBarsPadding().padding(bottom = 16.dp)) {
             Text("Sleep timer", style = MaterialTheme.typography.titleLarge, modifier = Modifier.padding(horizontal = 20.dp, vertical = 18.dp))
-            val label = SleepTimer.label()
-            if (label != null) Text("Music stops: $label", style = MaterialTheme.typography.bodySmall, color = Aoide.accent, modifier = Modifier.padding(horizontal = 20.dp).padding(bottom = 6.dp))
+            val label = SleepTimer.short(remaining, endOfTrack)
+            if (label != null) Text(if (endOfTrack) "Music stops after this song" else "Music stops in $label", style = MaterialTheme.typography.bodySmall, color = Aoide.accent, modifier = Modifier.padding(horizontal = 20.dp).padding(bottom = 6.dp).testTag("sleep_status"))
             listOf(5, 10, 15, 30, 45, 60).forEach { m ->
-                val chosen = endAt != null && !endOfTrack && SleepTimer.remainingMs() in ((m - 1) * 60_000L)..(m * 60_000L)
-                Option("$m minutes", chosen) { SleepTimer.setMinutes(m); Toasts.show("Music stops in $m minutes"); onDismiss() }
+                Option("$m minutes", minutes == m && !endOfTrack) { SleepTimer.setMinutes(m); Toasts.show("Music stops in $m minutes"); onDismiss() }
             }
             Option("End of this song", endOfTrack) { SleepTimer.setEndOfTrack(); Toasts.show("Music stops after this song"); onDismiss() }
             if (SleepTimer.isSet) Option("Turn off timer", false) { SleepTimer.cancel(); Toasts.show("Sleep timer off"); onDismiss() }

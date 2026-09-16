@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="utf-8"?>
+<data-extraction-rules>
+    <cloud-backup>
+        <exclude domain="file" path="downloads/" />
+        <exclude domain="file" path="downloads.json" />
+        <exclude domain="file" path="downloads.json.bak" />
+        <exclude domain="sharedpref" path="aoide_answers.xml" />
+        <exclude domain="file" path="session.json" />
+        <exclude domain="file" path="session.json.bak" />
+    </cloud-backup>
+    <device-transfer>
+        <exclude domain="file" path="downloads/" />
+        <exclude domain="file" path="downloads.json" />
+        <exclude domain="file" path="downloads.json.bak" />
+        <exclude domain="sharedpref" path="aoide_answers.xml" />
+    </device-transfer>
+</data-extraction-rules>

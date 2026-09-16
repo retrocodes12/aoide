@@ -10,6 +10,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material3.Icon
@@ -46,8 +47,8 @@ fun ShelfRow(shelf: Shelf, onNavigate: (String) -> Unit, title: String = shelf.t
     if (shelf.isEmpty) return
     Column {
         SectionTitle(title.ifBlank { "For you" }, action = shelf.strapline?.let { s -> { Text(s, style = MaterialTheme.typography.labelSmall, color = Aoide.subdued, maxLines = 1, overflow = TextOverflow.Ellipsis) } })
-        if (shelf.tracks.isNotEmpty()) CardRow(shelf.tracks.take(20), { it.id }) { t ->
-            MediaCard(Catalog.cover(t.album?.cover, 320), t.title, t.artistNames, tag = tag) { PlayerController.playTracks(shelf.tracks, shelf.tracks.indexOfFirst { it.id == t.id }, PlayContext("shelf", title)) }
+        if (shelf.tracks.isNotEmpty()) CardRow(shelf.tracks.take(20).withIndex().toList(), { "${it.index}-${it.value.id}" }) { (i, t) ->
+            MediaCard(Catalog.cover(t.album?.cover, 320), t.title, t.artistNames, tag = tag) { PlayerController.playTracks(shelf.tracks, i, PlayContext("shelf", title)) }
         }
         if (shelf.albums.isNotEmpty()) CardRow(shelf.albums.take(20), { it.id }) { a ->
             MediaCard(Catalog.cover(a.cover, 320), a.title, listOfNotNull(a.primaryArtist?.name, a.year.ifBlank { null }).joinToString(" · "), tag = tag) { onNavigate("album/${a.id}") }
@@ -79,7 +80,7 @@ fun MoodScreen(browseId: String, params: String, onBack: () -> Unit, onNavigate:
         when (val r = res) {
             is Resource.Loading -> item { SkeletonCards() }
             is Resource.Failed -> item { ErrorState(r.error, what = "page") { r.reload() } }
-            is Resource.Ready -> items(r.value, key = { it.title }) { shelf -> ShelfRow(shelf, onNavigate, tag = "mood_card") }
+            is Resource.Ready -> itemsIndexed(r.value, key = { i, s -> "$i-${s.title}" }) { _, shelf -> ShelfRow(shelf, onNavigate, tag = "mood_card") }
         }
         item { Spacer(Modifier.height(160.dp)) }
     }
@@ -94,7 +95,7 @@ fun DiscographyScreen(browseId: String, params: String, title: String, onBack: (
         when (val r = res) {
             is Resource.Loading -> item { SkeletonCards() }
             is Resource.Failed -> item { ErrorState(r.error, what = "list") { r.reload() } }
-            is Resource.Ready -> items(r.value.chunked(2), key = { it.first().id }) { pair ->
+            is Resource.Ready -> itemsIndexed(r.value.chunked(2), key = { i, p -> "$i-${p.first().id}" }) { _, pair ->
                 Row(Modifier.padding(horizontal = 16.dp, vertical = 8.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                     pair.forEach { a -> Column(Modifier.weight(1f)) { MediaCard(Catalog.cover(a.cover, 320), a.title, listOfNotNull(a.year.ifBlank { null }, a.type?.lowercase()?.replaceFirstChar(Char::uppercase)).joinToString(" · "), width = 999.dp, tag = "disco_card") { onNavigate("album/${a.id}") } } }
                     if (pair.size == 1) Spacer(Modifier.weight(1f))

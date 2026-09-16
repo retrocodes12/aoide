@@ -19,13 +19,14 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
-import androidx.compose.material3.AlertDialog
+import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.filled.Whatshot
+import androidx.compose.material.icons.filled.DateRange
+import androidx.compose.material.icons.filled.Explore
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -44,9 +45,6 @@ import app.aoide.data.Catalog
 import app.aoide.data.Library
 import app.aoide.ui.Toasts
 import app.aoide.ui.plural
-import androidx.compose.foundation.text.KeyboardActions
-import androidx.compose.foundation.text.KeyboardOptions
-import androidx.compose.ui.text.input.ImeAction
 import app.aoide.ui.components.Artwork
 import app.aoide.ui.components.Chip
 import app.aoide.ui.components.EmptyState
@@ -58,7 +56,6 @@ import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.FolderOpen
 import androidx.compose.material.icons.filled.PlaylistAdd
 import androidx.compose.material3.ModalBottomSheet
-import androidx.compose.material3.HorizontalDivider
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.foundation.layout.Box
@@ -75,6 +72,8 @@ fun LibraryScreen(onNavigate: (String) -> Unit) {
     var filter by rememberSaveable { mutableStateOf(Filter.ALL) }
     var creating by remember { mutableStateOf(false) }
     var adding by remember { mutableStateOf(false) }
+    var searching by rememberSaveable { mutableStateOf(false) }
+    var needle by rememberSaveable { mutableStateOf("") }
     data class Row(val key: String, val image: String?, val title: String, val sub: String, val round: Boolean = false, val liked: Boolean = false, val route: String, val icon: ImageVector? = null)
     val rows = buildList {
         if (filter == Filter.ALL || filter == Filter.PLAYLISTS) {
@@ -82,25 +81,35 @@ fun LibraryScreen(onNavigate: (String) -> Unit) {
             add(Row("downloads", null, "Downloads", "Offline · ${plural(downloads.size, "song")}", route = "downloads", icon = Icons.Filled.Download))
             add(Row("history", null, "History", "Recently played · ${plural(lib.recentTracks.size, "song")}", route = "history", icon = Icons.Filled.History))
             add(Row("local", null, "On this phone", "Your own music files", route = "local_files", icon = Icons.Filled.FolderOpen))
+            // Lists the library writes for itself out of what has been played and liked.
+            if (lib.mostPlayed.isNotEmpty()) add(Row("smart_most", null, "Most played", "Made for you · ${plural(lib.mostPlayed.size, "song")}", route = "smart/most", icon = Icons.Filled.Whatshot))
+            if (lib.thisWeek.isNotEmpty()) add(Row("smart_week", null, "This week", "Made for you · ${plural(lib.thisWeek.size, "song")}", route = "smart/week", icon = Icons.Filled.DateRange))
+            if (lib.neverPlayed.isNotEmpty()) add(Row("smart_never", null, "Liked, never played", "Made for you · ${plural(lib.neverPlayed.size, "song")}", route = "smart/never", icon = Icons.Filled.Explore))
             lib.playlists.forEach { add(Row(it.id, Catalog.cover(it.tracks.firstOrNull()?.album?.cover, 160), it.title, "Playlist · ${plural(it.tracks.size, "song")}", route = "local/${it.id}")) }
             lib.followedPlaylists.forEach { add(Row(it.uuid, Catalog.playlistImage(it, 160), it.title, "Playlist" + (it.numberOfTracks?.let { n -> " · ${plural(n, "song")}" } ?: ""), route = "playlist/${it.uuid}")) }
         }
         if (filter == Filter.ALL || filter == Filter.ALBUMS) lib.albums.forEach { add(Row("a${it.id}", Catalog.cover(it.cover, 160), it.title, "Album · ${it.primaryArtist?.name ?: ""}", route = "album/${it.id}")) }
         if (filter == Filter.ALL || filter == Filter.ARTISTS) lib.artists.forEach { add(Row("r${it.id}", Catalog.artistPicture(it.picture, 160), it.name, "Artist", round = true, route = "artist/${it.id}")) }
     }
+    val q = app.aoide.data.Parse.norm(needle)
+    val shown = if (q.isBlank()) rows else rows.filter { app.aoide.data.Parse.norm(it.title).contains(q) || app.aoide.data.Parse.norm(it.sub).contains(q) }
     LazyColumn(Modifier.testTag("library")) {
-        item {
+        item(key = "head") {
             Row(Modifier.statusBarsPadding().fillMaxWidth().padding(start = 16.dp, end = 4.dp, top = 12.dp), verticalAlignment = Alignment.CenterVertically) {
                 Text("Your Library", style = MaterialTheme.typography.headlineMedium, modifier = Modifier.weight(1f))
+                IconButton(onClick = { searching = !searching; if (!searching) needle = "" }, modifier = Modifier.semantics { contentDescription = "Search your library" }.testTag("library_search")) { Icon(Icons.Filled.Search, null, tint = if (searching) Aoide.accent else Aoide.fg, modifier = Modifier.size(26.dp)) }
                 IconButton(onClick = { adding = true }, modifier = Modifier.semantics { contentDescription = "Create playlist" }.testTag("create_playlist")) { Icon(Icons.Filled.Add, null, tint = Aoide.fg, modifier = Modifier.size(28.dp)) }
             }
         }
-        item {
+        if (searching) item(key = "find") {
+            app.aoide.ui.components.AoideField(needle, { needle = it }, "Find in your library", Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 6.dp).testTag("library_needle"))
+        }
+        item(key = "filters") {
             LazyRow(contentPadding = PaddingValues(horizontal = 16.dp, vertical = 10.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                items(Filter.entries.drop(1)) { f -> Chip(f.label, filter == f) { filter = if (filter == f) Filter.ALL else f } }
+                items(Filter.entries) { f -> Chip(f.label, filter == f) { filter = f } }
             }
         }
-        items(rows, key = { it.key }) { r ->
+        items(shown, key = { it.key }) { r ->
             androidx.compose.foundation.layout.Row(Modifier.fillMaxWidth().clickable { onNavigate(r.route) }.padding(horizontal = 16.dp, vertical = 8.dp).testTag("library_row"), verticalAlignment = Alignment.CenterVertically) {
                 if (r.liked) LikedTile(64.dp)
                 else if (r.icon != null) Box(Modifier.size(64.dp).clip(RoundedCornerShape(4.dp)).background(Brush.linearGradient(listOf(Aoide.elevated2, Aoide.elevated))), contentAlignment = Alignment.Center) { Icon(r.icon, null, tint = Aoide.fg, modifier = Modifier.size(28.dp)) }
@@ -112,8 +121,12 @@ fun LibraryScreen(onNavigate: (String) -> Unit) {
                 }
             }
         }
-        if (rows.size <= 4 && filter == Filter.ALL) item { EmptyState("Start your library", "Save albums and follow artists, or make a playlist with +.") }
-        if (rows.isEmpty()) item { EmptyState("Nothing here yet") }
+        val builtIn = 4
+        when {
+            q.isNotBlank() && shown.isEmpty() -> item(key = "empty") { EmptyState("Nothing matches \"${needle.trim()}\"", "Try another word, or clear the search.", action = { app.aoide.ui.components.WhitePill("Clear") { needle = "" } }) }
+            filter != Filter.ALL && shown.isEmpty() -> item(key = "empty") { EmptyState("No ${filter.label.lowercase()} saved yet", "Everything you save shows up here.", action = { app.aoide.ui.components.WhitePill("Show all") { filter = Filter.ALL } }) }
+            filter == Filter.ALL && rows.size <= builtIn && lib.liked.isEmpty() -> item(key = "empty") { EmptyState("Start your library", "Save albums and follow artists, or make a playlist with +.") }
+        }
         item { Spacer(Modifier.height(160.dp)) }
     }
     if (adding) {
@@ -145,7 +158,6 @@ private fun AddSheet(onDismiss: () -> Unit, onCreate: () -> Unit, onImport: () -
                     }
                 }
             }
-            HorizontalDivider(color = Aoide.rule)
         }
     }
 }

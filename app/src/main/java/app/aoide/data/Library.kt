@@ -8,6 +8,7 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.encodeToString
@@ -29,6 +30,13 @@ data class LibraryState(
     val playedAt: Map<String, Long> = emptyMap(),
 ) {
     fun isLiked(id: String) = liked.any { it.id == id }
+
+    /** Songs played three times or more, most played first. */
+    val mostPlayed: List<Track> get() = recentTracks.filter { (plays[it.id] ?: 0) >= 3 }.sortedByDescending { plays[it.id] ?: 0 }
+    /** Liked songs never heard through, newest like first. */
+    val neverPlayed: List<Track> get() = liked.filter { plays[it.id] == null }
+    /** Songs heard in the last week, most recent first. */
+    val thisWeek: List<Track> get() { val since = System.currentTimeMillis() - 7L * 86_400_000L; return recentTracks.filter { (playedAt[it.id] ?: 0L) >= since } }
     fun hasAlbum(id: String) = albums.any { it.id == id }
     fun follows(id: String) = artists.any { it.id == id }
     fun hasPlaylist(uuid: String) = followedPlaylists.any { it.uuid == uuid }
@@ -44,15 +52,15 @@ object Library {
 
     fun init(context: Context) {
         file = File(context.filesDir, "library.json")
-        if (file.exists()) runCatching { _state.value = json.decodeFromString(file.readText()) }
+        Store.read(file) { json.decodeFromString<LibraryState>(it) }?.let { _state.value = it }
     }
 
     private fun update(f: (LibraryState) -> LibraryState) {
-        _state.value = f(_state.value)
+        _state.update(f)
         saveJob?.cancel()
         saveJob = scope.launch {
             delay(400)
-            runCatching { file.writeText(json.encodeToString(_state.value)) }
+            runCatching { Store.writeAtomic(file, json.encodeToString(_state.value)) }
         }
     }
 
@@ -99,7 +107,7 @@ object Library {
         s.copy(
             recentTracks = (listOf(t) + s.recentTracks.filter { it.id != t.id }).take(100),
             plays = s.plays + (t.id to ((s.plays[t.id] ?: 0) + 1)),
-            playedAt = s.playedAt + (t.id to System.currentTimeMillis()),
+            playedAt = (s.playedAt + (t.id to System.currentTimeMillis())).let { m -> if (m.size > 2000) m.entries.sortedByDescending { it.value }.take(2000).associate { it.key to it.value } else m },
         )
     }
 
@@ -124,5 +132,6 @@ object Library {
         update { s -> s.copy(recentSearches = (listOf(t) + s.recentSearches.filter { !it.equals(t, true) }).take(8)) }
     }
     fun clearRecentSearches() = update { it.copy(recentSearches = emptyList()) }
+    fun removeRecentSearch(term: String) = update { s -> s.copy(recentSearches = s.recentSearches.filter { !it.equals(term, true) }) }
     fun clearHistory() = update { it.copy(recentTracks = emptyList(), plays = emptyMap(), playedAt = emptyMap()) }
 }

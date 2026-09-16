@@ -19,10 +19,9 @@ import androidx.compose.foundation.lazy.rememberLazyListState
 import app.aoide.ui.components.CollapsingBar
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.text.KeyboardActions
-import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.CheckCircle
@@ -39,11 +38,9 @@ import app.aoide.data.Downloads
 import app.aoide.data.Importer
 import androidx.compose.runtime.rememberCoroutineScope
 import kotlinx.coroutines.launch
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -63,12 +60,10 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.palette.graphics.Palette
-import app.aoide.data.Album
 import app.aoide.data.Catalog
 import app.aoide.data.Library
 import app.aoide.data.PlayContext
@@ -137,7 +132,7 @@ fun AlbumScreen(id: String, onBack: () -> Unit, onNavigate: (String) -> Unit) {
     val album = page?.album
     val tracks = page?.tracks.orEmpty()
     val tint = rememberImageTint(album?.cover?.let { Catalog.cover(it, 160) }, Tint.FALLBACK)
-    LaunchedEffect(album, tint) { album?.let { Library.recordAlbum(it); AppUi.page = tint } }
+    LaunchedEffect(album?.id) { album?.let(Library::recordAlbum) }
     val ctx = PlayContext("album", album?.title ?: "", "album/$id")
     val thisPlaying = player.context?.href == ctx.href && player.isPlaying
     if (r is Resource.Failed) return Column { BackRow(onBack); ErrorState(r.error, what = "album", onHome = { onNavigate("home") }) { r.reload() } }
@@ -164,21 +159,19 @@ fun AlbumScreen(id: String, onBack: () -> Unit, onNavigate: (String) -> Unit) {
                         DownloadDisc(tracks)
                     }
                 },
-                shuffle = { if (!player.shuffle) PlayerController.toggleShuffle(); PlayerController.playTracks(tracks, (tracks.indices).random(), ctx) },
+                shuffle = { PlayerController.playTracks(tracks, (tracks.indices).random(), ctx, shuffled = true) },
                 playing = thisPlaying, canPlay = tracks.isNotEmpty(),
                 onPlay = { if (player.context?.href == ctx.href && player.index >= 0) PlayerController.toggle() else PlayerController.playTracks(tracks, 0, ctx) },
             )
         }
         if (r is Resource.Loading) item { SkeletonRows(8) }
-        items(tracks.withIndex().toList(), key = { it.value.id }) { (i, t) ->
+        itemsIndexed(tracks, key = { i, t -> "$i-${t.id}" }) { i, t ->
             // The artist line only appears when a track's credits differ from the album's.
             val names = t.artistNames
-            TrackRow(t, showArt = false, number = i + 1, subtitle = if (names == albumArtist) "" else names, onClick = { PlayerController.playTracks(tracks, i, ctx) })
+            TrackRow(t, showArt = false, number = i + 1, subtitle = if (names == albumArtist) "" else names, onClick = { PlayerController.playTracks(tracks, i, ctx) }, list = tracks, index = i)
         }
         if (album != null && !album.description.isNullOrBlank()) {
-            item {
-                Text(album.description, style = MaterialTheme.typography.bodyMedium, color = Aoide.subdued, maxLines = if (moreAbout) Int.MAX_VALUE else 3, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(16.dp).clickable { moreAbout = !moreAbout }.testTag("album_about"))
-            }
+            item { ExpandableText(album.description, moreAbout, "album_about") { moreAbout = !moreAbout } }
         }
         val others = page?.others.orEmpty()
         if (others.isNotEmpty()) {
@@ -193,11 +186,14 @@ fun AlbumScreen(id: String, onBack: () -> Unit, onNavigate: (String) -> Unit) {
     }
 }
 
-fun prettyDate(iso: String): String = runCatching {
-    val (y, m, d) = iso.take(10).split("-").map { it.toInt() }
-    val months = listOf("January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December")
-    "$d ${months[m - 1]} $y"
-}.getOrDefault(iso.take(10))
+/** A block of prose clipped to a few lines, with a "More" that says it can open. */
+@Composable
+private fun ExpandableText(text: String, open: Boolean, tag: String, onToggle: () -> Unit) {
+    Column(Modifier.padding(16.dp).clickable(onClick = onToggle).testTag(tag)) {
+        Text(text, style = MaterialTheme.typography.bodyMedium, color = Aoide.subdued, maxLines = if (open) Int.MAX_VALUE else 3, overflow = TextOverflow.Ellipsis)
+        Text(if (open) "Less" else "More", style = MaterialTheme.typography.labelLarge, color = Aoide.fg, modifier = Modifier.padding(top = 6.dp))
+    }
+}
 
 @Composable
 private fun BackRow(onBack: () -> Unit) {
@@ -213,7 +209,6 @@ fun PlaylistScreen(uuid: String, onBack: () -> Unit, onNavigate: (String) -> Uni
     val p = (r as? Resource.Ready)?.value?.first
     val tracks = (r as? Resource.Ready)?.value?.second.orEmpty()
     val tint = rememberImageTint(p?.let { Catalog.playlistImage(it, 160) }, Tint.of(tracks.firstOrNull()?.album?.vibrantColor))
-    LaunchedEffect(tint) { AppUi.page = tint }
     val ctx = PlayContext("playlist", p?.title ?: "", "playlist/$uuid")
     val thisPlaying = player.context?.href == ctx.href && player.isPlaying
     if (r is Resource.Failed) return Column { BackRow(onBack); ErrorState(r.error, what = "playlist", onHome = { onNavigate("home") }) { r.reload() } }
@@ -235,13 +230,14 @@ fun PlaylistScreen(uuid: String, onBack: () -> Unit, onNavigate: (String) -> Uni
                         DownloadDisc(tracks)
                     }
                 },
-                shuffle = { if (!player.shuffle) PlayerController.toggleShuffle(); PlayerController.playTracks(tracks, tracks.indices.random(), ctx) },
+                shuffle = { PlayerController.playTracks(tracks, tracks.indices.random(), ctx, shuffled = true) },
                 playing = thisPlaying, canPlay = tracks.isNotEmpty(),
                 onPlay = { if (player.context?.href == ctx.href && player.index >= 0) PlayerController.toggle() else PlayerController.playTracks(tracks, 0, ctx) },
             )
         }
         if (r is Resource.Loading) item { SkeletonRows(10) }
-        items(tracks, key = { "${it.id}" }) { t -> TrackRow(t, onClick = { PlayerController.playTracks(tracks, tracks.indexOf(t), ctx) }) }
+        if (p != null && (p.numberOfTracks ?: 0) > tracks.size && r is Resource.Ready) item { Text("Showing the first ${tracks.size} of ${p.numberOfTracks} songs.", style = MaterialTheme.typography.bodySmall, color = Aoide.subdued, modifier = Modifier.padding(horizontal = 16.dp, vertical = 6.dp)) }
+        itemsIndexed(tracks, key = { i, t -> "$i-${t.id}" }) { i, t -> TrackRow(t, onClick = { PlayerController.playTracks(tracks, i, ctx) }, list = tracks, index = i) }
         item { Spacer(Modifier.height(160.dp)) }
     }
     CollapsingBar(list, p?.title ?: "", tint, 330.dp, onBack)
@@ -255,8 +251,7 @@ fun LocalPlaylistScreen(id: String, onBack: () -> Unit) {
     val player by PlayerController.state.collectAsState()
     var rename by remember { mutableStateOf(false) }
     if (pl == null) return Column { BackRow(onBack); EmptyState("That playlist is gone") }
-    val tint = remember(pl.tracks.firstOrNull()?.album?.vibrantColor) { Tint.of(pl.tracks.firstOrNull()?.album?.vibrantColor) }
-    LaunchedEffect(tint) { AppUi.page = tint }
+    val tint = rememberImageTint(Catalog.cover(pl.tracks.firstOrNull()?.album?.cover, 160), Tint.of(pl.tracks.firstOrNull()?.album?.vibrantColor))
     val ctx = PlayContext("playlist", pl.title, "local/${pl.id}")
     val thisPlaying = player.context?.href == ctx.href && player.isPlaying
     val list = rememberLazyListState()
@@ -297,14 +292,14 @@ fun LocalPlaylistScreen(id: String, onBack: () -> Unit) {
                         }
                     }
                 },
-                shuffle = { if (!player.shuffle) PlayerController.toggleShuffle(); PlayerController.playTracks(pl.tracks, pl.tracks.indices.random(), ctx) },
+                shuffle = { PlayerController.playTracks(pl.tracks, pl.tracks.indices.random(), ctx, shuffled = true) },
                 playing = thisPlaying, canPlay = pl.tracks.isNotEmpty(),
                 onPlay = { if (player.context?.href == ctx.href && player.index >= 0) PlayerController.toggle() else PlayerController.playTracks(pl.tracks, 0, ctx) },
             )
         }
         if (pl.tracks.isEmpty()) item { EmptyState("Let's find something for your playlist", "Use ··· on any song to add it here.") }
-        items(pl.tracks.withIndex().toList(), key = { "${it.index}-${it.value.id}" }) { (i, t) ->
-            TrackRow(t, onClick = { PlayerController.playTracks(pl.tracks, i, ctx) }, onRemove = { Library.removeFromPlaylist(pl.id, i); Toasts.show("Removed from ${pl.title}") })
+        itemsIndexed(pl.tracks, key = { i, t -> "$i-${t.id}" }) { i, t ->
+            TrackRow(t, onClick = { PlayerController.playTracks(pl.tracks, i, ctx) }, onRemove = { Library.removeFromPlaylist(pl.id, i); Toasts.show("Removed from ${pl.title}") }, list = pl.tracks, index = i)
         }
         item { Spacer(Modifier.height(160.dp)) }
     }
@@ -323,7 +318,6 @@ fun LikedScreen(onBack: () -> Unit) {
     val player by PlayerController.state.collectAsState()
     val ctx = PlayContext("liked", "Liked Songs", "liked")
     val thisPlaying = player.context?.href == ctx.href && player.isPlaying
-    LaunchedEffect(Unit) { AppUi.page = Tint.from(Aoide.accent) }
     LazyColumn(Modifier.testTag("liked_screen")) {
         item {
             Column(Modifier.fillMaxWidth().background(Brush.verticalGradient(0f to Aoide.accent.copy(alpha = .85f), 0.64f to Aoide.ground, 1f to Aoide.ground, endY = 900f))) {
@@ -333,12 +327,12 @@ fun LikedScreen(onBack: () -> Unit) {
                 Text("You · ${plural(lib.liked.size, "song")}", style = MaterialTheme.typography.bodySmall, color = Aoide.subdued, modifier = Modifier.fillMaxWidth().padding(top = 6.dp), textAlign = androidx.compose.ui.text.style.TextAlign.Center)
                 Row(Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 18.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                     app.aoide.ui.components.PillButton(if (thisPlaying) "Pause" else "Play", if (thisPlaying) Icons.Filled.Pause else Icons.Filled.PlayArrow, filled = true, enabled = lib.liked.isNotEmpty(), modifier = Modifier.weight(1f).testTag("play_fab")) { if (player.context?.href == ctx.href && player.index >= 0) PlayerController.toggle() else PlayerController.playTracks(lib.liked, 0, ctx) }
-                    app.aoide.ui.components.PillButton("Shuffle", Icons.Filled.Shuffle, filled = false, enabled = lib.liked.isNotEmpty(), modifier = Modifier.weight(1f).testTag("shuffle")) { if (!player.shuffle) PlayerController.toggleShuffle(); PlayerController.playTracks(lib.liked, lib.liked.indices.random(), ctx) }
+                    app.aoide.ui.components.PillButton("Shuffle", Icons.Filled.Shuffle, filled = false, enabled = lib.liked.isNotEmpty(), modifier = Modifier.weight(1f).testTag("shuffle")) { PlayerController.playTracks(lib.liked, lib.liked.indices.random(), ctx, shuffled = true) }
                 }
             }
         }
         if (lib.liked.isEmpty()) item { EmptyState("Songs you like will appear here", "Save songs by tapping the + on a song.") }
-        items(lib.liked, key = { it.id }) { t -> TrackRow(t, onClick = { PlayerController.playTracks(lib.liked, lib.liked.indexOf(t), ctx) }) }
+        itemsIndexed(lib.liked, key = { i, t -> "$i-${t.id}" }) { i, t -> TrackRow(t, onClick = { PlayerController.playTracks(lib.liked, i, ctx) }, list = lib.liked, index = i) }
         item { Spacer(Modifier.height(160.dp)) }
     }
 }
@@ -356,7 +350,7 @@ fun ArtistScreen(id: String, onBack: () -> Unit, onNavigate: (String) -> Unit) {
     val tracks = page?.topTracks.orEmpty()
     // Artist pictures carry no vibrant colour; tint from the picture, else from the top song's record.
     val tint = rememberImageTint(a?.picture?.let { Catalog.artistPicture(it, 160) }, Tint.FALLBACK)
-    LaunchedEffect(tint) { AppUi.page = tint }
+    var radioPending by remember { mutableStateOf(false) }
     val ar = res
     if (ar is Resource.Failed) return Column { BackRow(onBack); ErrorState(ar.error, what = "artist", onHome = { onNavigate("home") }) { ar.reload() } }
     val ctx = PlayContext("artist", a?.name ?: "", "artist/$id")
@@ -382,22 +376,25 @@ fun ArtistScreen(id: String, onBack: () -> Unit, onNavigate: (String) -> Unit) {
         item {
             Row(Modifier.fillMaxWidth().padding(start = 16.dp, end = 12.dp, top = 4.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 if (a != null) OutlinePill(if (lib.follows(a.id)) "Following" else "Follow", lib.follows(a.id)) { Toasts.show(if (Library.toggleArtist(a)) "Following ${a.name}" else "Unfollowed ${a.name}") }
-                if (a?.radio != null) OutlinePill("Radio") {
+                if (a?.radio != null) OutlinePill(if (radioPending) "Starting…" else "Radio", pending = radioPending) {
+                    if (radioPending) return@OutlinePill
+                    radioPending = true
                     scope.launch {
                         val mix = runCatching { Catalog.radioPlaylist(a.radio) }.getOrDefault(emptyList())
+                        radioPending = false
                         if (mix.isEmpty()) Toasts.show("Couldn't build the radio") else PlayerController.playTracks(mix, 0, PlayContext("radio", "${a.name} Radio", "artist/$id"))
                     }
                 }
                 Spacer(Modifier.weight(1f))
-                IconButton(onClick = { if (!player.shuffle) PlayerController.toggleShuffle(); PlayerController.playTracks(tracks, tracks.indices.random(), ctx) }, enabled = tracks.isNotEmpty(), modifier = Modifier.semantics { contentDescription = "Shuffle play" }.testTag("shuffle")) { Icon(Icons.Filled.Shuffle, null, tint = Aoide.subdued, modifier = Modifier.size(28.dp)) }
+                IconButton(onClick = { PlayerController.playTracks(tracks, tracks.indices.random(), ctx, shuffled = true) }, enabled = tracks.isNotEmpty(), modifier = Modifier.semantics { contentDescription = "Shuffle play" }.testTag("shuffle")) { Icon(Icons.Filled.Shuffle, null, tint = Aoide.subdued, modifier = Modifier.size(28.dp)) }
                 PlayFab(playing = thisPlaying, enabled = tracks.isNotEmpty()) { if (player.context?.href == ctx.href && player.index >= 0) PlayerController.toggle() else PlayerController.playTracks(tracks, 0, ctx) }
             }
         }
         item { SectionTitle("Popular") }
         if (page != null) {
             val shown = tracks.take(if (moreTop) 10 else 5)
-            items(shown.withIndex().toList(), key = { "p${it.value.id}" }) { (i, tr) ->
-                TrackRow(tr, number = i + 1, subtitle = tr.plays?.let { p -> listOfNotNull(p, tr.album?.title?.takeIf { it.isNotBlank() }).joinToString(" · ") } ?: tr.album?.title, onClick = { PlayerController.playTracks(tracks, i, ctx) })
+            itemsIndexed(shown, key = { i, tr -> "p$i${tr.id}" }) { i, tr ->
+                TrackRow(tr, number = i + 1, subtitle = tr.plays?.let { p -> listOfNotNull(p, tr.album?.title?.takeIf { it.isNotBlank() }).joinToString(" · ") } ?: tr.album?.title, onClick = { PlayerController.playTracks(tracks, i, ctx) }, list = tracks, index = i)
             }
             if (tracks.size > 5) item { TextButton(onClick = { moreTop = !moreTop }, modifier = Modifier.padding(horizontal = 8.dp)) { Text(if (moreTop) "Show less" else "See more", color = Aoide.subdued) } }
             if (tracks.isEmpty()) item { EmptyState("No popular songs found") }
@@ -427,7 +424,8 @@ fun ArtistScreen(id: String, onBack: () -> Unit, onNavigate: (String) -> Unit) {
             item {
                 Column(Modifier.padding(horizontal = 16.dp).fillMaxWidth().clip(RoundedCornerShape(8.dp)).background(Aoide.elevated).clickable { moreBio = !moreBio }) {
                     if (a?.banner != null) Artwork(app.aoide.data.Music.imageWide(a.banner, 800, 400), Modifier.fillMaxWidth().height(200.dp), RoundedCornerShape(0.dp))
-                    Text(b, style = MaterialTheme.typography.bodyMedium, color = Aoide.subdued, maxLines = if (moreBio) Int.MAX_VALUE else 4, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(16.dp))
+                    Text(b, style = MaterialTheme.typography.bodyMedium, color = Aoide.subdued, maxLines = if (moreBio) Int.MAX_VALUE else 4, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(start = 16.dp, end = 16.dp, top = 16.dp))
+                    Text(if (moreBio) "Less" else "More", style = MaterialTheme.typography.labelLarge, color = Aoide.fg, modifier = Modifier.padding(start = 16.dp, end = 16.dp, top = 6.dp, bottom = 16.dp))
                 }
             }
         }
@@ -437,16 +435,16 @@ fun ArtistScreen(id: String, onBack: () -> Unit, onNavigate: (String) -> Unit) {
     }
 }
 
-@Suppress("unused")
-private fun keepAlbum(a: Album, t: Track) = a to t
-
 /** One disc that downloads a whole list, and turns orange once every song is kept. */
 @Composable
 internal fun DownloadDisc(tracks: List<Track>) {
     val downloads by Downloads.all.collectAsState()
+    val queue by Downloads.queue.collectAsState()
+    val current by Downloads.current.collectAsState()
     val ids = tracks.filter { !it.isLocal }.map { it.id }
     val all = ids.isNotEmpty() && ids.all { downloads.containsKey(it) }
-    val some = ids.any { downloads.containsKey(it) || Downloads.isQueued(it) }
+    val queued = queue.map { it.id }.toSet() + listOfNotNull(current?.track?.id)
+    val some = ids.any { downloads.containsKey(it) || it in queued }
     IconDisc(if (all) Icons.Filled.DownloadDone else Icons.Outlined.ArrowCircleDown, if (all) "Remove downloads" else "Download all", Modifier.testTag("download_all"), tint = if (all || some) Aoide.accent else Color.White) {
         if (ids.isEmpty()) return@IconDisc
         if (all) AppUi.ask("Remove these downloads?", "Remove", "The songs stay in your library and play online.") { ids.forEach(Downloads::remove); Toasts.show("Downloads removed") }

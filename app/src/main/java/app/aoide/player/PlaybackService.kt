@@ -1,6 +1,11 @@
 package app.aoide.player
 
 import android.app.PendingIntent
+import android.os.Bundle
+import androidx.media3.session.CommandButton
+import androidx.media3.session.SessionCommand
+import androidx.media3.session.SessionResult
+import app.aoide.R
 import android.content.Intent
 import androidx.media3.common.AudioAttributes
 import androidx.media3.common.C
@@ -54,12 +59,32 @@ class PlaybackService : MediaLibraryService() {
             .build()
         val ex = PlayerExtras(this, exo).also { it.start() }
         extras = ex
+        exo.addListener(object : androidx.media3.common.Player.Listener {
+            override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) { showLiked(mediaItem?.mediaId?.let { Library.state.value.isLiked(it) } ?: false) }
+        })
         val intent = Intent(this, MainActivity::class.java)
         val pending = PendingIntent.getActivity(this, 0, intent, PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
-        session = MediaLibrarySession.Builder(this, FadingPlayer(exo, ex), LibraryCallback()).setSessionActivity(pending).build()
+        session = MediaLibrarySession.Builder(this, FadingPlayer(exo, ex), LibraryCallback()).setSessionActivity(pending).setCustomLayout(listOf(likeButton(false))).build()
+        // Started cold by a widget or a headset button: the last queue comes back paused where it was,
+        // so that press has something to play even when the app itself is not running.
+        SessionStore.load(this)?.let { s ->
+            s.queue.forEach(TrackRegistry::put)
+            exo.setMediaItems(s.queue.map { AoideMedia.toPlayable(AoideMedia.mediaItemFor(it)) }, s.index, s.positionMs.coerceAtLeast(0))
+            exo.repeatMode = s.repeat
+            exo.playWhenReady = false
+        }
     }
 
     override fun onGetSession(controllerInfo: MediaSession.ControllerInfo): MediaLibrarySession? = session
+
+    /** The Like button on the notification and the lock screen, drawn to match whether the song is liked. */
+    private fun likeButton(liked: Boolean): CommandButton = CommandButton.Builder()
+        .setDisplayName(if (liked) "Remove from Liked Songs" else "Add to Liked Songs")
+        .setIconResId(if (liked) R.drawable.ic_liked else R.drawable.ic_like)
+        .setSessionCommand(SessionCommand(CMD_LIKE, Bundle.EMPTY))
+        .build()
+
+    private fun showLiked(liked: Boolean) { session?.setCustomLayout(listOf(likeButton(liked))) }
 
     override fun onTaskRemoved(rootIntent: Intent?) {
         val p = session?.player
@@ -79,6 +104,23 @@ class PlaybackService : MediaLibraryService() {
 
     /** MediaItems lose their URI crossing the IPC boundary; put it back from the media id. The rest is the browse tree for Android Auto. */
     private inner class LibraryCallback : MediaLibrarySession.Callback {
+        override fun onConnect(session: MediaSession, controller: MediaSession.ControllerInfo): MediaSession.ConnectionResult {
+            val commands = MediaSession.ConnectionResult.DEFAULT_SESSION_AND_LIBRARY_COMMANDS.buildUpon()
+                .add(SessionCommand(CMD_LIKE, Bundle.EMPTY)).add(SessionCommand(CMD_LIKE_STATE, Bundle.EMPTY)).build()
+            return MediaSession.ConnectionResult.AcceptedResultBuilder(session).setAvailableSessionCommands(commands).build()
+        }
+
+        override fun onCustomCommand(session: MediaSession, controller: MediaSession.ControllerInfo, customCommand: SessionCommand, args: Bundle): ListenableFuture<SessionResult> {
+            when (customCommand.customAction) {
+                CMD_LIKE -> {
+                    val t = session.player.currentMediaItem?.mediaId?.let(TrackRegistry::get)
+                    if (t != null) showLiked(Library.toggleLike(t))
+                }
+                CMD_LIKE_STATE -> showLiked(args.getBoolean("liked"))
+            }
+            return Futures.immediateFuture(SessionResult(SessionResult.RESULT_SUCCESS))
+        }
+
         override fun onAddMediaItems(mediaSession: MediaSession, controller: MediaSession.ControllerInfo, mediaItems: MutableList<MediaItem>): ListenableFuture<MutableList<MediaItem>> =
             Futures.immediateFuture(mediaItems.map(AoideMedia::toPlayable).toMutableList())
 
@@ -138,13 +180,19 @@ class PlaybackService : MediaLibraryService() {
             MediaMetadata.Builder().setTitle(title).setIsBrowsable(true).setIsPlayable(false).setMediaType(type).setArtworkUri(art?.let(android.net.Uri::parse)).build(),
         ).build()
 
-    private val searches = HashMap<String, List<Track>>()
+    private val searches = object : LinkedHashMap<String, List<Track>>(32, 0.75f, true) {
+        override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, List<Track>>?) = size > 20
+    }
 
-    private companion object {
-        const val ROOT = "root"
-        const val LIKED = "liked"
-        const val RECENT = "recent"
-        const val DOWNLOADS = "downloads"
-        const val PLAYLISTS = "playlists"
+    companion object {
+        /** Toggle the like on the song playing (from the notification). */
+        const val CMD_LIKE = "app.aoide.LIKE"
+        /** The app telling the session which way the button should point. */
+        const val CMD_LIKE_STATE = "app.aoide.LIKE_STATE"
+        private const val ROOT = "root"
+        private const val LIKED = "liked"
+        private const val RECENT = "recent"
+        private const val DOWNLOADS = "downloads"
+        private const val PLAYLISTS = "playlists"
     }
 }
