@@ -70,4 +70,16 @@ class PureTest {
         assertEquals(s.url, base)
         assertEquals("259-800", doc.getElementsByTagName("SegmentBase").item(0).attributes.getNamedItem("indexRange").textContent)
     }
+
+    @Test fun recognisesEntriesSavedBeforeTheCatalogueChanged() {
+        assertTrue(app.aoide.data.Legacy.isOldId("251380837"))
+        assertFalse(app.aoide.data.Legacy.isOldId("dQw4w9WgXcQ"))
+        assertFalse(app.aoide.data.Legacy.isOldId("MPREb_abc123"))
+        assertFalse(app.aoide.data.Legacy.isOldId(""))
+        assertTrue(app.aoide.data.Legacy.isOldCover("7e0dd366-7fb9-4326-a1bf-19a3fc750bda"))
+        assertFalse(app.aoide.data.Legacy.isOldCover("https://lh3.googleusercontent.com/abc=w120-h120"))
+        val old = app.aoide.data.Track("251380837", "Lovers Rock", version = "")
+        assertTrue(app.aoide.data.Legacy.isOld(old))
+        assertFalse(app.aoide.data.Legacy.isOld(old.copy(id = "local:12")))
+    }
 }

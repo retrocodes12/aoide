@@ -31,12 +31,18 @@ object Catalog {
     suspend fun searchPlaylists(term: String, limit: Int = 25): List<Playlist> =
         Parse.all(Music.search(term, Music.F_PLAYLISTS), "musicResponsiveListItemRenderer").mapNotNull { Parse.playlistFromRow(obj(it) ?: return@mapNotNull null) }.take(limit)
 
+    suspend fun searchAlbums(term: String, limit: Int = 25): List<Album> =
+        Parse.all(Music.search(term, Music.F_ALBUMS), "musicResponsiveListItemRenderer").mapNotNull { Parse.albumFromRow(obj(it) ?: return@mapNotNull null) }.take(limit)
+
+    suspend fun searchArtists(term: String, limit: Int = 25): List<Artist> =
+        Parse.all(Music.search(term, Music.F_ARTISTS), "musicResponsiveListItemRenderer").mapNotNull { Parse.artistFromRow(obj(it) ?: return@mapNotNull null) }.take(limit)
+
     /** Five requests at once: the mixed answer with its top result, then one per kind so every tab has depth. */
     suspend fun searchAll(term: String): SearchAll = coroutineScope {
         val mixed = async { runCatching { Music.search(term) }.getOrNull() }
         val songs = async { runCatching { searchTracks(term, 40) }.getOrDefault(emptyList()) }
-        val albums = async { runCatching { Parse.all(Music.search(term, Music.F_ALBUMS), "musicResponsiveListItemRenderer").mapNotNull { Parse.albumFromRow(obj(it) ?: return@mapNotNull null) } }.getOrDefault(emptyList()) }
-        val artists = async { runCatching { Parse.all(Music.search(term, Music.F_ARTISTS), "musicResponsiveListItemRenderer").mapNotNull { Parse.artistFromRow(obj(it) ?: return@mapNotNull null) } }.getOrDefault(emptyList()) }
+        val albums = async { runCatching { searchAlbums(term, Int.MAX_VALUE) }.getOrDefault(emptyList()) }
+        val artists = async { runCatching { searchArtists(term, Int.MAX_VALUE) }.getOrDefault(emptyList()) }
         val playlists = async { runCatching { searchPlaylists(term, 30) }.getOrDefault(emptyList()) }
         val m = mixed.await()
         val top = m?.let { topHit(it) }

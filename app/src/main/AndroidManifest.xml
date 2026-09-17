@@ -90,5 +90,12 @@
         </receiver>
 
         <receiver android:name=".widget.WidgetActions" android:exported="false" />
+
+        <!-- Declared so the system offers Aoide's resume card and a headset button can start it cold. -->
+        <receiver android:name="androidx.media3.session.MediaButtonReceiver" android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.MEDIA_BUTTON" />
+            </intent-filter>
+        </receiver>
     </application>
 </manifest>

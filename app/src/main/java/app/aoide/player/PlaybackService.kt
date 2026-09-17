@@ -23,6 +23,7 @@ import androidx.media3.session.SessionError
 import app.aoide.MainActivity
 import app.aoide.data.Catalog
 import app.aoide.data.Downloads
+import app.aoide.data.Legacy
 import app.aoide.data.Library
 import app.aoide.data.Track
 import com.google.common.collect.ImmutableList
@@ -69,7 +70,7 @@ class PlaybackService : MediaLibraryService() {
         // so that press has something to play even when the app itself is not running.
         SessionStore.load(this)?.let { s ->
             s.queue.forEach(TrackRegistry::put)
-            exo.setMediaItems(s.queue.map { AoideMedia.toPlayable(AoideMedia.mediaItemFor(it)) }, s.index, s.positionMs.coerceAtLeast(0))
+            exo.setMediaItems(s.queue.map { AoideMedia.toPlayable(AoideMedia.mediaItemFor(Legacy.upgrade(it))) }, s.index, s.positionMs.coerceAtLeast(0))
             exo.repeatMode = s.repeat
             exo.playWhenReady = false
         }
@@ -126,6 +127,14 @@ class PlaybackService : MediaLibraryService() {
 
         override fun onSetMediaItems(mediaSession: MediaSession, controller: MediaSession.ControllerInfo, mediaItems: MutableList<MediaItem>, startIndex: Int, startPositionMs: Long): ListenableFuture<MediaSession.MediaItemsWithStartPosition> =
             Futures.immediateFuture(MediaSession.MediaItemsWithStartPosition(ImmutableList.copyOf(mediaItems.map(AoideMedia::toPlayable)), startIndex, startPositionMs))
+
+        /** The system's resume card and a cold headset press both ask for this: the last session, where it stopped. */
+        override fun onPlaybackResumption(mediaSession: MediaSession, controller: MediaSession.ControllerInfo): ListenableFuture<MediaSession.MediaItemsWithStartPosition> {
+            val s = SessionStore.load(this@PlaybackService) ?: return Futures.immediateFailedFuture(UnsupportedOperationException("Nothing to resume"))
+            s.queue.forEach(TrackRegistry::put)
+            val items = s.queue.map { AoideMedia.toPlayable(AoideMedia.mediaItemFor(Legacy.upgrade(it))) }
+            return Futures.immediateFuture(MediaSession.MediaItemsWithStartPosition(ImmutableList.copyOf(items), s.index, s.positionMs.coerceAtLeast(0)))
+        }
 
         override fun onGetLibraryRoot(session: MediaLibrarySession, browser: MediaSession.ControllerInfo, params: LibraryParams?): ListenableFuture<LibraryResult<MediaItem>> =
             Futures.immediateFuture(LibraryResult.ofItem(folder(ROOT, "Aoide", MediaMetadata.MEDIA_TYPE_FOLDER_MIXED), params))

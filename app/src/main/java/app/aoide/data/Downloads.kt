@@ -233,6 +233,13 @@ object Downloads {
         persist()
     }
 
+    /** Kept files saved under the first catalogue's ids answer to the current ids; the files themselves stay put. */
+    fun replaceOld(tracks: Map<String, Track>) {
+        if (_all.value.keys.none { it in tracks }) return
+        _all.update { all -> all.values.associate { d -> tracks[d.track.id]?.let { it.id to d.copy(track = it) } ?: (d.track.id to d) } }
+        persist()
+    }
+
     private fun persist() {
         runCatching { Store.writeAtomic(indexFile, json.encodeToString(_all.value.values.toList())) }
     }

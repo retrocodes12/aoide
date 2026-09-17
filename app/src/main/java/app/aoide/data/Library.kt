@@ -116,6 +116,30 @@ object Library {
         s.copy(playlists = s.playlists.map { p -> if (p.id != id) p else p.copy(tracks = p.tracks + tracks.filter { t -> p.tracks.none { it.id == t.id } }) })
     }
 
+    /** Swap entries saved under the first catalogue's ids for the ones found now; anything not found stays as it was. */
+    fun replaceOld(tracks: Map<String, Track>, albums: Map<String, Album>, artists: Map<String, Artist>) {
+        val s = _state.value
+        val touched = (s.liked + s.playlists.flatMap { it.tracks } + s.recentTracks).any { it.id in tracks } ||
+            (s.albums + s.recentAlbums).any { it.id in albums } || s.recentAlbums.any { Legacy.isOldId(it.id) && Legacy.gaveUp(it.id) } || s.artists.any { it.id in artists } ||
+            s.plays.keys.any { it in tracks } || s.playedAt.keys.any { it in tracks }
+        if (!touched) return
+        fun t(x: Track) = tracks[x.id] ?: x
+        fun key(id: String) = tracks[id]?.id ?: id
+        update { st ->
+            st.copy(
+                liked = st.liked.map(::t).distinctBy { it.id },
+                playlists = st.playlists.map { p -> p.copy(tracks = p.tracks.map(::t)) },
+                recentTracks = st.recentTracks.map(::t).distinctBy { it.id },
+                albums = st.albums.map { a -> albums[a.id]?.let(::slim) ?: a }.distinctBy { it.id },
+                // A recent record nobody could find again cannot be opened; recents are only history, so it goes.
+                recentAlbums = st.recentAlbums.map { a -> albums[a.id]?.let(::slim) ?: a }.filter { !(Legacy.isOldId(it.id) && Legacy.gaveUp(it.id)) }.distinctBy { it.id },
+                artists = st.artists.map { a -> artists[a.id]?.let { Artist(it.id, it.name, it.picture, it.banner) } ?: a }.distinctBy { it.id },
+                plays = st.plays.entries.groupBy({ key(it.key) }, { it.value }).mapValues { it.value.sum() },
+                playedAt = st.playedAt.entries.groupBy({ key(it.key) }, { it.value }).mapValues { it.value.max() },
+            )
+        }
+    }
+
     /** The whole library as JSON, for a backup file. */
     fun export(): String = json.encodeToString(_state.value)
 

@@ -174,8 +174,10 @@ class PlayerExtras(context: Context, private val exo: ExoPlayer) : Player.Listen
     private fun maybeAutoplay() {
         if (!Prefs.autoplay.on || exo.repeatMode != Player.REPEAT_MODE_OFF) return
         if (exo.mediaItemCount == 0 || exo.currentMediaItemIndex != exo.mediaItemCount - 1) return
-        val id = exo.currentMediaItem?.mediaId ?: return
-        if (id.startsWith("local:") || id == autoplayedFrom) return
+        val itemId = exo.currentMediaItem?.mediaId ?: return
+        // A song saved under the first catalogue's id asks for its radio by the id it was found under.
+        val id = app.aoide.data.Legacy.tracks.value[itemId]?.id ?: itemId
+        if (id.startsWith("local:") || app.aoide.data.Legacy.isOldId(id) || id == autoplayedFrom) return
         autoplayedFrom = id
         scope.launch {
             val recs = withContext(Dispatchers.IO) { runCatching { Catalog.radio(id) }.getOrDefault(emptyList()) }

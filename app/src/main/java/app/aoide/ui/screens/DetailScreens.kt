@@ -318,7 +318,11 @@ fun LikedScreen(onBack: () -> Unit) {
     val player by PlayerController.state.collectAsState()
     val ctx = PlayContext("liked", "Liked Songs", "liked")
     val thisPlaying = player.context?.href == ctx.href && player.isPlaying
-    LazyColumn(Modifier.testTag("liked_screen")) {
+    val list = rememberLazyListState()
+    // The same compact bar as every other list page, so the title never scrolls up under the clock.
+    val tint = remember(Aoide.accent) { Tint.from(Aoide.accent) }
+    Box {
+    LazyColumn(Modifier.testTag("liked_screen"), state = list) {
         item {
             Column(Modifier.fillMaxWidth().background(Brush.verticalGradient(0f to Aoide.accent.copy(alpha = .85f), 0.64f to Aoide.ground, 1f to Aoide.ground, endY = 900f))) {
                 BackRow(onBack)
@@ -334,6 +338,8 @@ fun LikedScreen(onBack: () -> Unit) {
         if (lib.liked.isEmpty()) item { EmptyState("Songs you like will appear here", "Save songs by tapping the + on a song.") }
         itemsIndexed(lib.liked, key = { i, t -> "$i-${t.id}" }) { i, t -> TrackRow(t, onClick = { PlayerController.playTracks(lib.liked, i, ctx) }, list = lib.liked, index = i) }
         item { Spacer(Modifier.height(160.dp)) }
+    }
+    CollapsingBar(list, "Liked Songs", tint, 330.dp, onBack)
     }
 }
 

@@ -127,6 +127,8 @@ object PlayerController {
             // A lookup that lands after the queue was built upgrades the songs still to come; a burst of answers costs one pass.
             upgradeJob?.cancel()
             upgradeJob = scope.launch { HiRate.known.collect { upgradeQueue(); delay(300) } }
+            // Songs saved under the first catalogue's ids are swapped for the ones found, so they get covers and a radio.
+            scope.launch { app.aoide.data.Legacy.tracks.collect { if (it.isNotEmpty()) replaceOld(it) } }
             sync()
         }, ContextCompat.getMainExecutor(appContext))
     }
@@ -296,7 +298,7 @@ object PlayerController {
         // Answers kept from earlier are read as the items are built; the songs coming up are asked about now.
         HiRate.requestAll(s.queue.subList(s.index, minOf(s.index + 12, s.queue.size)))
         if (c.mediaItemCount == 0) {
-            c.setMediaItems(s.queue.map(::mediaItem), s.index, s.positionMs.coerceAtLeast(0))
+            c.setMediaItems(s.queue.map { mediaItem(app.aoide.data.Legacy.upgrade(it)) }, s.index, s.positionMs.coerceAtLeast(0))
             c.repeatMode = s.repeat
             c.playWhenReady = false
         }
@@ -526,6 +528,26 @@ object PlayerController {
      * included: it keeps its place and carries on from the better file. Items already built on
      * that file are left alone, so nothing is reloaded twice.
      */
+    /** Old entries in the queue become the songs found for them. The one playing is left alone until it is paused. */
+    private fun replaceOld(found: Map<String, Track>) {
+        val c = controller ?: return
+        val cur = c.currentMediaItemIndex
+        for (i in 0 until c.mediaItemCount) {
+            val t = found[c.getMediaItemAt(i).mediaId] ?: continue
+            if (i != cur) { runCatching { c.replaceMediaItem(i, mediaItem(t)) }; continue }
+            if (c.isPlaying) continue
+            val pos = c.currentPosition
+            val idle = c.playbackState == Player.STATE_IDLE
+            runCatching {
+                c.replaceMediaItem(i, mediaItem(t))
+                c.seekTo(i, pos)
+                if (!idle) c.prepare()
+            }
+        }
+        sync()
+        saveSession(force = true)
+    }
+
     private fun upgradeQueue() {
         val c = controller ?: return
         if (!HiRate.enabled) return
@@ -560,7 +582,8 @@ object PlayerController {
      * What a tap on a search result or a lone card should do: the rest of the queue is music that
      * belongs with the song, not the other things that matched the words.
      */
-    fun playRadio(t: Track) {
+    fun playRadio(track: Track) {
+        val t = app.aoide.data.Legacy.upgrade(track)
         playTracks(listOf(t), 0, PlayContext("radio", "${t.title} Radio"))
         if (t.isLocal) return
         scope.launch {

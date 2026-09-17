@@ -16,6 +16,8 @@ class AoideApp : Application() {
         Prefs.init(this)
         Library.init(this)
         Downloads.init(this)
+        app.aoide.data.Legacy.init(this)
+        app.aoide.data.Legacy.migrate()
         AudioEffects.load()
         kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.IO).launch { app.aoide.data.HiRate.prune(); app.aoide.player.Positions.prune() }
         Aoide.apply(Prefs.accent.value, Prefs.pureBlack.on)

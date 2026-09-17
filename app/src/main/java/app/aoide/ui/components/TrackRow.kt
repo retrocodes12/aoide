@@ -95,7 +95,7 @@ fun TrackRow(
         }
         Column(Modifier.weight(1f)) {
             Text(
-                track.title + (track.version?.let { " - $it" } ?: ""),
+                track.title + (track.version?.takeIf { it.isNotBlank() }?.let { " - $it" } ?: ""),
                 style = MaterialTheme.typography.bodyLarge,
                 color = if (isCurrent) Aoide.accent else Aoide.fg,
                 maxLines = 1,

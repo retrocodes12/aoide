@@ -48,14 +48,15 @@ object Importer {
             var done = 0
             val results = coroutineScope {
                 songs.chunked(4).flatMap { chunk ->
-                    chunk.map { song -> async { song to find(song) } }.map { it.await() }.also { done += chunk.size; onProgress(done, songs.size) }
+                    chunk.map { song -> async { song to match(song) } }.map { it.await() }.also { done += chunk.size; onProgress(done, songs.size) }
                 }
             }
             Result(title, results.mapNotNull { it.second }, results.filter { it.second == null }.map { it.first }, "list:$id")
         }
     }
 
-    private suspend fun find(song: Song): Track? {
+    /** The catalogue's song for a title, artists and length, or null when nothing fits closely enough. */
+    suspend fun match(song: Song): Track? {
         val primary = song.artists.split(",", "&").firstOrNull()?.trim().orEmpty()
         val hits = runCatching { Catalog.searchTracks("$primary ${song.title}", 8) }.getOrDefault(emptyList())
         val want = Parse.norm(song.title)

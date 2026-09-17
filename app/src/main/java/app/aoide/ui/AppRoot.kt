@@ -38,7 +38,25 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
-import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.statusBars
+import androidx.compose.foundation.layout.windowInsetsTopHeight
+import androidx.compose.runtime.mutableStateMapOf
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
+import androidx.compose.ui.input.nestedscroll.NestedScrollSource
+import androidx.compose.ui.input.nestedscroll.nestedScroll
+import androidx.compose.ui.input.pointer.PointerEvent
+import androidx.compose.ui.input.pointer.PointerEventPass
+import androidx.compose.ui.input.pointer.changedToDown
+import androidx.compose.ui.input.pointer.changedToUp
+import androidx.compose.ui.input.pointer.PointerId
+import androidx.compose.ui.node.requireDensity
+import androidx.compose.ui.node.ModifierNodeElement
+import androidx.compose.ui.node.PointerInputModifierNode
+import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.runtime.collectAsState
@@ -124,8 +142,21 @@ fun AppRoot() {
         // iOS's push: a detail screen slides in from the right over a fading parent, and slides back out on pop.
         // The three tabs crossfade instead, as Spotify's do.
         val push = spring<IntOffset>(dampingRatio = 1f, stiffness = 900f)
+        // How far the page on screen has scrolled, read from the scrolls its lists report upward. Pages with
+        // their own collapsing bar cover the status bar themselves; every other page gets a plain band there
+        // once content starts passing under the clock.
+        val entryKey = backStack?.id ?: route
+        val scrolled = remember { mutableStateMapOf<String, Float>() }
+        val topScroll = remember(entryKey) {
+            object : NestedScrollConnection {
+                override fun onPostScroll(consumed: Offset, available: Offset, source: NestedScrollSource): Offset {
+                    if (consumed.y != 0f) scrolled[entryKey] = ((scrolled[entryKey] ?: 0f) - consumed.y).coerceAtLeast(0f)
+                    return Offset.Zero
+                }
+            }
+        }
         NavHost(
-            nav, startDestination = "home", modifier = Modifier.fillMaxSize(),
+            nav, startDestination = "home", modifier = Modifier.fillMaxSize().nestedScroll(topScroll),
             enterTransition = { slideInHorizontally(push) { it / 3 } + fadeIn(tween(180)) },
             exitTransition = { slideOutHorizontally(push) { -it / 10 } + fadeOut(tween(160)) },
             popEnterTransition = { slideInHorizontally(push) { -it / 10 } + fadeIn(tween(160)) },
@@ -152,11 +183,16 @@ fun AppRoot() {
             composable("import?link={link}", arguments = listOf(navArgument("link") { nullable = true; defaultValue = null })) { ImportScreen(it.arguments?.getString("link"), { nav.popBackStack() }, navigate) }
         }
 
+        val ownBar = route.startsWith("album/") || route.startsWith("playlist/") || route.startsWith("local/") || route.startsWith("artist/") || route == "liked"
+        val density0 = androidx.compose.ui.platform.LocalDensity.current
+        val band by animateFloatAsState(if (!ownBar && (scrolled[entryKey] ?: 0f) > with(density0) { 12.dp.toPx() }) 1f else 0f, tween(160), label = "status_band")
+        if (band > 0f) Box(Modifier.align(Alignment.TopCenter).fillMaxWidth().windowInsetsTopHeight(WindowInsets.statusBars).graphicsLayer { alpha = band }.background(Aoide.ground).testTag("status_band"))
+
         // Mini player + tab bar float over the content on a tall fade, so rows are not sliced mid-height where they pass under.
-        // The fade swallows touches: a row that has dissolved into it is not a row that can be tapped.
+        // A row that has dissolved into the fade is not a row that can be tapped, but a swipe that starts there still scrolls the list.
         var barHeight by remember { mutableStateOf(0) }
         Column(Modifier.align(Alignment.BottomCenter).fillMaxWidth().onSizeChanged { barHeight = it.height }.background(Brush.verticalGradient(0f to Color.Transparent, 0.22f to Aoide.ground.copy(alpha = .94f), 0.4f to Aoide.ground, 1f to Aoide.base))) {
-            Spacer(Modifier.height(72.dp).fillMaxWidth().pointerInput(Unit) { awaitPointerEventScope { while (true) awaitPointerEvent().changes.forEach { it.consume() } } })
+            Spacer(Modifier.height(72.dp).fillMaxWidth())
             if (player.current != null) MiniPlayer(AppUi.player)
             NavigationBar(containerColor = Color.Transparent, tonalElevation = 0.dp, windowInsets = NavigationBarDefaults.windowInsets, modifier = Modifier.testTag("tab_bar")) {
                 TABS.forEach { t ->
@@ -172,6 +208,10 @@ fun AppRoot() {
                 }
             }
         }
+
+        // The fade's touch strip is its own child of this Box: sharing touches with the list works between siblings, and only at this level.
+        val stripBottom = with(androidx.compose.ui.platform.LocalDensity.current) { (barHeight - 72.dp.roundToPx()).coerceAtLeast(0).toDp() }
+        if (barHeight > 0) Spacer(Modifier.align(Alignment.BottomCenter).padding(bottom = stripBottom).height(72.dp).fillMaxWidth().then(FadeTouchesElement))
 
         AnimatedVisibility(AppUi.nowPlayingOpen, enter = slideInVertically(spring(dampingRatio = 0.9f, stiffness = Spring.StiffnessMediumLow)) { it } + fadeIn(tween(120)), exit = slideOutVertically(spring(dampingRatio = 1f, stiffness = Spring.StiffnessMedium)) { it } + fadeOut(tween(160))) {
             NowPlayingScreen(AppUi.player, navigate)
@@ -228,3 +268,35 @@ private fun ToastHost(modifier: Modifier) {
 }
 
 private val Int.sp get() = androidx.compose.ui.unit.TextUnit(this.toFloat(), androidx.compose.ui.unit.TextUnitType.Sp)
+
+/**
+ * The fade over the bottom of the list. Touches there also reach the list underneath (the node shares
+ * them with its siblings), so a swipe that starts on the fade scrolls. A touch that lifts without
+ * moving is a tap: its release is consumed before the row sees it, which cancels the row's click,
+ * so a row that has dissolved into the fade does not open.
+ */
+private object FadeTouchesElement : ModifierNodeElement<FadeTouchesNode>() {
+    override fun create() = FadeTouchesNode()
+    override fun update(node: FadeTouchesNode) = Unit
+    override fun hashCode() = "fade_touches".hashCode()
+    override fun equals(other: Any?) = other === this
+}
+
+private class FadeTouchesNode : Modifier.Node(), PointerInputModifierNode {
+    private val downAt = HashMap<PointerId, Offset>()
+    private val moved = HashSet<PointerId>()
+
+    override fun sharePointerInputWithSiblings() = true
+    override fun onPointerEvent(pointerEvent: PointerEvent, pass: PointerEventPass, bounds: IntSize) {
+        if (pass != PointerEventPass.Initial) return
+        val slop = 8f * requireDensity().density
+        pointerEvent.changes.forEach { c ->
+            when {
+                c.changedToDown() -> { downAt[c.id] = c.position; moved.remove(c.id) }
+                c.changedToUp() -> { if (c.id !in moved) c.consume(); downAt.remove(c.id); moved.remove(c.id) }
+                c.pressed -> downAt[c.id]?.let { if ((c.position - it).getDistance() > slop) moved.add(c.id) }
+            }
+        }
+    }
+    override fun onCancelPointerInput() { downAt.clear(); moved.clear() }
+}

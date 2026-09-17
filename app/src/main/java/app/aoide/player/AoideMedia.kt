@@ -60,7 +60,7 @@ object AoideMedia {
         TrackRegistry.put(t)
         val extras = Bundle().apply { putString("track", json.encodeToString(t)); if (autoplay) putBoolean("autoplay", true) }
         val meta = MediaMetadata.Builder()
-            .setTitle(t.title + (t.version?.let { " - $it" } ?: ""))
+            .setTitle(t.title + (t.version?.takeIf { it.isNotBlank() }?.let { " - $it" } ?: ""))
             .setArtist(t.artistNames)
             .setAlbumTitle(t.album?.title)
             .setArtworkUri(Catalog.cover(t.album?.cover, 640)?.let(Uri::parse))
